@@ -261,7 +261,7 @@ def main():
     # Otherwise, the client creates too many TCP Connections, and new connections fall
     # into a SYN_SENT state, which we don't want.
     # HTTP/2 will totally fix this, but aiohttp doesn't support http2 :(
-    connector = aiohttp.TCPConnector(limit=100)
+    connector = aiohttp.TCPConnector(limit=200)
     for i in range(args.user_count):
         awaits.append(simulate_user(
             args.hub_url,
