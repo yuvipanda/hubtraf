@@ -241,6 +241,12 @@ def main():
         help='Max seconds user is active for'
     )
     argparser.add_argument(
+        '--user-session-max-start-delay',
+        default=60,
+        type=int,
+        help='Max seconds by which all users should have logged in'
+    )
+    argparser.add_argument(
         '--json',
         action='store_true',
         help='True if output should be JSON formatted'
@@ -267,7 +273,7 @@ def main():
             args.hub_url,
             f'{args.user_prefix}-' + str(i),
             'hello',
-            int(random.uniform(0, 60)),
+            int(random.uniform(0, args.user_session_max_start_delay)),
             int(random.uniform(args.user_session_min_seconds, args.user_session_max_seconds)),
             connector=connector
         ))
