@@ -177,14 +177,17 @@ class User:
             while time.monotonic() - start_time < repeat_time_seconds:
                 exec_start_time = time.monotonic()
                 iteration += 1
-                msgs = []
                 try:
                     async with async_timeout.timeout(execute_timeout):
                         msg_id = str(uuid.uuid4())
                         await ws.send_json(self.request_execute_code(msg_id, code))
                         async for msg_text in ws:
+                            if msg_text.type != aiohttp.WSMsgType.TEXT:
+                                self.log.msg('WS: Unexpected message type', action='code-execute', phase='failure', message_type=msg_text.type)
+                                raise OperationError()
+
                             msg = msg_text.json()
-                            msgs.append(msg)
+
                             if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
                                 # These are responses to our request
                                 if msg['channel'] == 'iopub':
