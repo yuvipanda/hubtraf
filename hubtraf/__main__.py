@@ -43,7 +43,8 @@ class User:
         )
 
 
-    async def login(self):
+
+    async def login(self, server_start_retries=6, server_start_maxwait=10):
         """
         Log in to the JupyterHub with given credentials.
 
@@ -52,7 +53,21 @@ class User:
         assert self.state == User.States.CLEAR
         url = self.hub_url / 'hub/login'
         self.log.msg('Login: Starting', action='login', phase='start')
-        resp = await self.session.post(url, data={'username': self.username, 'password': self.password})
+        for i in range(server_start_retries):
+            resp = await self.session.post(url, data={'username': self.username, 'password': self.password})
+            if resp.status == 200:
+                break
+            elif resp.status == 429:
+                self.log.msg('Login: Retrying', action='login', phase='retry', attempt=i+1)
+                await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
+            else:
+                self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed')
+                raise OperationError()
+        else:
+            self.log.msg('Login: Failed', action='login', phase='failed', attempt=server_start_retries)
+            raise OperationError()
+
+
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
         if hub_cookie:
             self.log = self.log.bind(hub=hub_cookie.value)
