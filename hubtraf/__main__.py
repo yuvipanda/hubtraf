@@ -24,17 +24,16 @@ class User:
         KERNEL_STARTED = 4
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession(connector=self.connector)
+        self.session = aiohttp.ClientSession()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close() 
 
-    def __init__(self, username, password, hub_url, connector=None):
+    def __init__(self, username, password, hub_url):
         self.username = username
         self.password = password
         self.hub_url = URL(hub_url)
-        self.connector = connector
 
         self.state = User.States.CLEAR
         self.notebook_url = self.hub_url / 'user' / self.username
@@ -196,9 +195,9 @@ class User:
 
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds, connector=None):
+async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
     await asyncio.sleep(delay_seconds)
-    async with User(username, password, hub_url, connector) as u:
+    async with User(username, password, hub_url) as u:
         try:
             await u.login()
             await u.ensure_server()
@@ -263,19 +262,13 @@ def main():
     structlog.configure(processors=processors)
 
     awaits = []
-    # we use a connector with an explicit request limit (100)
-    # Otherwise, the client creates too many TCP Connections, and new connections fall
-    # into a SYN_SENT state, which we don't want.
-    # HTTP/2 will totally fix this, but aiohttp doesn't support http2 :(
-    connector = aiohttp.TCPConnector(limit=200)
     for i in range(args.user_count):
         awaits.append(simulate_user(
             args.hub_url,
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_seconds, args.user_session_max_seconds)),
-            connector=connector
+            int(random.uniform(args.user_session_min_seconds, args.user_session_max_seconds))
         ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
