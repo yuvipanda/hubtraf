@@ -51,6 +51,9 @@ class User:
         url = self.hub_url / 'hub/login'
         self.log.msg('Login: Starting', action='login', phase='start')
         resp = await self.session.post(url, data={'username': self.username, 'password': self.password})
+        hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
+        if hub_cookie:
+            self.log = self.log.bind(hub=hub_cookie.value)
         if resp.url == self.hub_url / 'hub/home':
             # We were sent to the hub home page, so server might not have started yet
             self.state = User.States.LOGGED_IN
