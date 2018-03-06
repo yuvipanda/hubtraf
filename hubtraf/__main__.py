@@ -3,10 +3,12 @@ import aiohttp
 import socket
 import argparse
 import uuid
+import random
 from yarl import URL
 import asyncio
 import async_timeout
 import structlog
+import time
 
 logger = structlog.get_logger()
 
@@ -150,47 +152,58 @@ class User:
             "channel": "shell"
         }
 
-    async def execute_code(self, code, execute_timeout):
+    async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
-        msg_id = str(uuid.uuid4())
-        ws_connected = False
-        try:
-            async with async_timeout.timeout(execute_timeout):
-                self.log.msg('WS: Connecting', action='kernel-connect', phase='start')
-                async with self.session.ws_connect(channel_url) as ws:
-                    self.log.msg('WS: Connected', action='kernel-connect', phase='complete')
+        self.log.msg('WS: Connecting', action='kernel-connect', phase='start')
+        async with self.session.ws_connect(channel_url) as ws:
+            self.log.msg('WS: Connected', action='kernel-connect', phase='complete')
+            start_time = time.monotonic()
+            iteration = 0
+            while time.monotonic() - start_time < repeat_time_seconds:
+                exec_start_time = time.monotonic()
+                iteration += 1
+                msgs = []
+                try:
+                    async with async_timeout.timeout(execute_timeout):
+                        msg_id = str(uuid.uuid4())
+                        await ws.send_json(self.request_execute_code(msg_id, code))
+                        async for msg_text in ws:
+                            msg = msg_text.json()
+                            msgs.append(msg)
+                            if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
+                                # These are responses to our request
+                                if msg['channel'] == 'iopub':
+                                    # FIXME: Dedup?
+                                    response = None
+                                    if msg['msg_type'] == 'execute_result':
+                                        response = msg['content']['data']['text/plain']
+                                    elif msg['msg_type'] == 'stream':
+                                        response = msg['content']['text']
+                                    if response:
+                                        assert response == output
+                                        duration = time.monotonic() - exec_start_time
+                                        if duration > 1:
+                                            # Only print slow execution times
+                                            self.log.msg('Code Execute: Slow', action='code-execute', phase='iteration', duration=duration, iteration=iteration)
+                                        break
+                except asyncio.TimeoutError:
+                    self.log.msg(f'Code Execute: Timed Out', action='code-execute', phase='failure', duration=time.monotonic() - exec_start_time)
+                    raise OperationError()
+                # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
+                await asyncio.sleep(random.uniform(0, 1))
+            self.log.msg('Code Execute: Complete', action='code-execute', phase='complete', iterations=iteration)
 
-                    ws_connected = True
-                    self.log.msg('Code Execute: Started', action='code-execute', phase='start')
-                    await ws.send_json(self.request_execute_code(msg_id, code))
-                    async for msg_text in ws:
-                        msg = msg_text.json()
-                        if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
-                            # These are responses to our request
-                            if msg['channel'] == 'iopub':
-                                if msg['msg_type'] == 'execute_result':
-                                    self.log.msg('Code Execute: Completed', action='code-execute', phase='complete')
-                                    return msg['content']['data']['text/plain']
-                                elif msg['msg_type'] == 'stream':
-                                    self.log.msg('Code Execute: Completed', action='code-execute', phase='complete')
-                                    return msg['content']['text']
-        except asyncio.TimeoutError:
-            if ws_connected:
-                self.log.msg(f'Code Execute: Timed Out', action='code-execute', phase='failure')
-            else:
-                self.log.msg(f'WS: Timed out', action='kernel-connect', phase='failure')
-            raise OperationError()
 
 
 
-
-async def simulate_user(hub_url, username, password):
+async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+    await asyncio.sleep(delay_seconds)
     async with User(username, password, hub_url) as u:
         try:
             await u.login()
             await u.ensure_server()
             await u.start_kernel()
-            assert await u.execute_code("5 * 4", 5) == "20"
+            await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds)
         except OperationError:
             pass
         finally:
@@ -216,6 +229,18 @@ def main():
         help='Prefix to use when generating user names'
     )
     argparser.add_argument(
+        '--user-session-min-seconds',
+        default=60,
+        type=int,
+        help='Min seconds user is active for'
+    )
+    argparser.add_argument(
+        '--user-session-max-seconds',
+        default=300,
+        type=int,
+        help='Max seconds user is active for'
+    )
+    argparser.add_argument(
         '--json',
         action='store_true',
         help='True if output should be JSON formatted'
@@ -233,7 +258,13 @@ def main():
 
     awaits = []
     for i in range(args.user_count):
-        awaits.append(simulate_user(args.hub_url, f'{args.user_prefix}-' + str(i), 'hello'))
+        awaits.append(simulate_user(
+            args.hub_url,
+            f'{args.user_prefix}-' + str(i),
+            'hello',
+            int(random.uniform(0, 60)),
+            int(random.uniform(args.user_session_min_seconds, args.user_session_max_seconds)),
+        ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
     
