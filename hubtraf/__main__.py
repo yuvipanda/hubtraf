@@ -103,8 +103,12 @@ class User:
         assert self.state == User.States.SERVER_STARTED
 
         self.log.msg('Kernel: Starting', action='kernel-start', phase='start')
-        kernel_response = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
-        self.kernel_id = (await kernel_response.json())['id']
+        resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
+
+        if resp.status != 201:
+            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp))
+            raise OperationError()
+        self.kernel_id = (await resp.json())['id']
         self.log.msg('Kernel: Started', action='kernel-start', phase='complete')
         self.state = User.States.KERNEL_STARTED
 
@@ -119,7 +123,8 @@ class User:
         assert self.state == User.States.KERNEL_STARTED
 
         self.log.msg('Kernel: Stopping', action='kernel-stop', phase='start')
-        await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
+        resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
+        assert resp.status == 204
         self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete')
         self.state = User.States.SERVER_STARTED
 
