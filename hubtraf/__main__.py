@@ -96,7 +96,7 @@ class User:
                 self.log.msg('Server: Started', action='start-server', phase='complete', attempt=i + 1)
                 break
             # FIXME: Add jitter?
-            await asyncio.sleep(max(i ^ 2, server_start_maxwait))
+            await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
         else:
             self.log.msg('Server: Failed', action='start-server', phase='failed')
             raise OperationError()
