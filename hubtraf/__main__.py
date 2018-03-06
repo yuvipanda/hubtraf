@@ -62,6 +62,9 @@ class User:
             # If we end up in the tree directly, the server definitely has started
             self.state = User.States.SERVER_STARTED
             self.log.msg('Login: Complete', action='login', phase='server-started')
+        else:
+            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed')
+            raise OperationError()
 
     async def ensure_server(self, server_start_retries=6, server_start_maxwait=10):
         if self.state == User.States.SERVER_STARTED:
