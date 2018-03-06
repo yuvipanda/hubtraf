@@ -89,7 +89,13 @@ class User:
     async def stop_server(self):
         assert self.state == User.States.SERVER_STARTED
         self.log.msg('Server: Stopping', action='server-stop', phase='start')
-        await self.session.post(self.notebook_url / 'api/shutdown', headers={'X-XSRFToken': self.xsrf_token})
+        resp = await self.session.delete(
+            self.hub_url / 'hub/api/users' / self.username / 'server',
+            headers={'Referer': str(self.hub_url / 'hub/')}
+        )
+        if resp.status != 202 and resp.status != 204:
+            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp))
+            raise OperationError()
         self.log.msg('Server: Stopped', action='server-stop', phase='complete')
         self.state = User.States.LOGGED_IN
 
