@@ -246,13 +246,13 @@ def main():
         help='Prefix to use when generating user names'
     )
     argparser.add_argument(
-        '--user-session-min-seconds',
+        '--user-session-min-runtime',
         default=60,
         type=int,
         help='Min seconds user is active for'
     )
     argparser.add_argument(
-        '--user-session-max-seconds',
+        '--user-session-max-runtime',
         default=300,
         type=int,
         help='Max seconds user is active for'
@@ -286,7 +286,7 @@ def main():
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_seconds, args.user_session_max_seconds))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
         ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
