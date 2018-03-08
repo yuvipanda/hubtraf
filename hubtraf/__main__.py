@@ -42,8 +42,6 @@ class User:
             username=username
         )
 
-
-
     async def login(self, server_start_retries=6, server_start_maxwait=10):
         """
         Log in to the JupyterHub with given credentials.
@@ -54,17 +52,18 @@ class User:
         url = self.hub_url / 'hub/login'
         self.log.msg('Login: Starting', action='login', phase='start')
         for i in range(server_start_retries):
+            start_time = time.monotonic()
             resp = await self.session.post(url, data={'username': self.username, 'password': self.password})
             if resp.status == 200:
                 break
             elif resp.status == 429:
-                self.log.msg('Login: Retrying', action='login', phase='retry', attempt=i+1)
+                self.log.msg('Login: Retrying', action='login', phase='retry', attempt=i+1, duration=time.monotonic() - start_time)
                 await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
             else:
-                self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed')
+                self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
                 raise OperationError()
         else:
-            self.log.msg('Login: Failed', action='login', phase='failed', attempt=server_start_retries)
+            self.log.msg('Login: Failed', action='login', phase='failed', attempt=server_start_retries, duration=time.monotonic() - start_time)
             raise OperationError()
 
 
@@ -74,59 +73,65 @@ class User:
         if resp.url == self.hub_url / 'hub/home':
             # We were sent to the hub home page, so server might not have started yet
             self.state = User.States.LOGGED_IN
-            self.log.msg('Login: Complete (No Server)', action='login', phase='logged-in')
+            self.log.msg('Login: Complete (No Server)', action='login', phase='logged-in', duration=time.monotonic() - start_time)
         elif resp.url == self.notebook_url / 'tree':
             # If we end up in the tree directly, the server definitely has started
             self.state = User.States.SERVER_STARTED
-            self.log.msg('Login: Complete', action='login', phase='server-started')
+            self.log.msg('Login: Complete', action='login', phase='server-started', duration=time.monotonic() - start_time)
         else:
-            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed')
+            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
             raise OperationError()
 
-    async def ensure_server(self, server_start_retries=6, server_start_maxwait=10):
+    async def ensure_server(self, timeout=300, server_start_maxwait=10):
         if self.state == User.States.SERVER_STARTED:
             return
 
         assert self.state == User.States.LOGGED_IN
 
-        for i in range(server_start_retries):
+        start_time = time.monotonic()
+        i = 0
+        while True:
+            i += 1
             self.log.msg(f'Server: Starting {i}', action='start-server', phase='start', attempt=i + 1)
             resp = await self.session.get(self.hub_url / 'hub/spawn')
             if resp.url == self.notebook_url / 'tree':
-                self.log.msg('Server: Started', action='start-server', phase='complete', attempt=i + 1)
+                self.log.msg('Server: Started', action='start-server', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
+            if time.monotonic() - start_time >= timeout:
+                self.log.msg('Server: Failed', action='start-server', phase='failed', duration=time.monotonic() - start_time)
+                raise OperationError()
             # FIXME: Add jitter?
             await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
-        else:
-            self.log.msg('Server: Failed', action='start-server', phase='failed')
-            raise OperationError()
         
         self.state = User.States.SERVER_STARTED
 
     async def stop_server(self):
         assert self.state == User.States.SERVER_STARTED
         self.log.msg('Server: Stopping', action='server-stop', phase='start')
+        start_time = time.monotonic()
         resp = await self.session.delete(
             self.hub_url / 'hub/api/users' / self.username / 'server',
             headers={'Referer': str(self.hub_url / 'hub/')}
         )
         if resp.status != 202 and resp.status != 204:
-            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp))
+            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
             raise OperationError()
-        self.log.msg('Server: Stopped', action='server-stop', phase='complete')
+        self.log.msg('Server: Stopped', action='server-stop', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
 
     async def start_kernel(self):
         assert self.state == User.States.SERVER_STARTED
 
         self.log.msg('Kernel: Starting', action='kernel-start', phase='start')
+        start_time = time.monotonic()
+
         resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
 
         if resp.status != 201:
-            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp))
+            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
             raise OperationError()
         self.kernel_id = (await resp.json())['id']
-        self.log.msg('Kernel: Started', action='kernel-start', phase='complete')
+        self.log.msg('Kernel: Started', action='kernel-start', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.KERNEL_STARTED
 
     @property
@@ -140,9 +145,10 @@ class User:
         assert self.state == User.States.KERNEL_STARTED
 
         self.log.msg('Kernel: Stopping', action='kernel-stop', phase='start')
+        start_time = time.monotonic()
         resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
         assert resp.status == 204
-        self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete')
+        self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.SERVER_STARTED
 
     def request_execute_code(self, msg_id, code):
