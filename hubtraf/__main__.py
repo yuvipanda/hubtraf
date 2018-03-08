@@ -42,50 +42,31 @@ class User:
             username=username
         )
 
-    async def login(self, server_start_retries=6, server_start_maxwait=10):
+    async def login(self):
         """
         Log in to the JupyterHub with given credentials.
 
+        We only log in, and try to not start the server itself. This
+        makes our testing code simpler, but we need to be aware of the fact this
+        might cause differences vs how users normally use this.
         """
         # We only log in if we haven't done anything already!
         assert self.state == User.States.CLEAR
         url = self.hub_url / 'hub/login'
         self.log.msg('Login: Starting', action='login', phase='start')
-        for i in range(server_start_retries):
-            start_time = time.monotonic()
-            resp = await self.session.post(url, data={'username': self.username, 'password': self.password})
-            if resp.status == 200:
-                break
-            elif resp.status == 429:
-                self.log.msg('Login: Retrying', action='login', phase='retry', attempt=i+1, duration=time.monotonic() - start_time)
-                await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
-            else:
-                self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
-                raise OperationError()
-        else:
-            self.log.msg('Login: Failed', action='login', phase='failed', attempt=server_start_retries, duration=time.monotonic() - start_time)
+        start_time = time.monotonic()
+        resp = await self.session.post(url, data={'username': self.username, 'password': self.password}, allow_redirects=False)
+        if resp.status != 302 and resp.status != 429:
+            print(resp.status)
+            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
             raise OperationError()
-
 
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
         if hub_cookie:
             self.log = self.log.bind(hub=hub_cookie.value)
-        if resp.url == self.hub_url / 'hub/home':
-            # We were sent to the hub home page, so server might not have started yet
-            self.state = User.States.LOGGED_IN
-            self.log.msg('Login: Complete (No Server)', action='login', phase='logged-in', duration=time.monotonic() - start_time)
-        elif resp.url == self.notebook_url / 'tree':
-            # If we end up in the tree directly, the server definitely has started
-            self.state = User.States.SERVER_STARTED
-            self.log.msg('Login: Complete', action='login', phase='server-started', duration=time.monotonic() - start_time)
-        else:
-            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
-            raise OperationError()
+        self.state = User.States.LOGGED_IN
 
-    async def ensure_server(self, timeout=300, server_start_maxwait=10):
-        if self.state == User.States.SERVER_STARTED:
-            return
-
+    async def ensure_server(self, timeout=300, server_start_maxwait=60):
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
