@@ -52,12 +52,12 @@ class User:
         """
         # We only log in if we haven't done anything already!
         assert self.state == User.States.CLEAR
+
         url = self.hub_url / 'hub/login'
         self.log.msg('Login: Starting', action='login', phase='start')
         start_time = time.monotonic()
         resp = await self.session.post(url, data={'username': self.username, 'password': self.password}, allow_redirects=False)
-        if resp.status != 302 and resp.status != 429:
-            print(resp.status)
+        if resp.status != 302:
             self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
             raise OperationError()
 
