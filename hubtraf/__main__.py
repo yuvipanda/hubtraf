@@ -64,6 +64,7 @@ class User:
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
         if hub_cookie:
             self.log = self.log.bind(hub=hub_cookie.value)
+        self.log.msg('Login: Complete', action='login', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
 
     async def ensure_server(self, timeout=300, server_start_maxwait=60):
