@@ -71,17 +71,20 @@ class User:
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
+        self.log.msg(f'Server: Starting', action='server-start', phase='start')
         i = 0
         while True:
             i += 1
-            self.log.msg(f'Server: Starting {i}', action='start-server', phase='start', attempt=i + 1)
+            self.log.msg(f'Server: Attmepting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
             resp = await self.session.get(self.hub_url / 'hub/spawn')
             if resp.url == self.notebook_url / 'tree':
-                self.log.msg('Server: Started', action='start-server', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.log.msg('Server: Failed', action='start-server', phase='failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Failed', action='server-start', phase='failed', duration=time.monotonic() - start_time)
                 raise OperationError()
+            # Always log retries, so we can count 'in-progress' actions
+            self.log.msg('Server: Retrying', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
             await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
         
