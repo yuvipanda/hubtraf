@@ -168,38 +168,31 @@ class User:
             while time.monotonic() - start_time < repeat_time_seconds:
                 exec_start_time = time.monotonic()
                 iteration += 1
-                try:
-                    async with async_timeout.timeout(execute_timeout):
-                        msg_id = str(uuid.uuid4())
-                        await ws.send_json(self.request_execute_code(msg_id, code))
-                        async for msg_text in ws:
-                            if msg_text.type != aiohttp.WSMsgType.TEXT:
-                                self.log.msg('WS: Unexpected message type', action='code-execute', phase='failure', message_type=msg_text.type)
-                                raise OperationError()
+                self.log.msg('Code Execute: Started', action='code-execute', phase='start', iteration=iteration)
+                msg_id = str(uuid.uuid4())
+                await ws.send_json(self.request_execute_code(msg_id, code))
+                async for msg_text in ws:
+                    if msg_text.type != aiohttp.WSMsgType.TEXT:
+                        self.log.msg('WS: Unexpected message type', action='code-execute', phase='failure', message_type=msg_text.type, message=str(msg_text))
+                        raise OperationError()
 
-                            msg = msg_text.json()
+                    msg = msg_text.json()
 
-                            if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
-                                # These are responses to our request
-                                if msg['channel'] == 'iopub':
-                                    response = None
-                                    if msg['msg_type'] == 'execute_result':
-                                        response = msg['content']['data']['text/plain']
-                                    elif msg['msg_type'] == 'stream':
-                                        response = msg['content']['text']
-                                    if response:
-                                        assert response == output
-                                        duration = time.monotonic() - exec_start_time
-                                        if duration > 1:
-                                            # Only print slow execution times
-                                            self.log.msg('Code Execute: Slow', action='code-execute', phase='iteration', duration=duration, iteration=iteration)
-                                        break
-                except asyncio.TimeoutError:
-                    self.log.msg(f'Code Execute: Timed Out', action='code-execute', phase='failure', duration=time.monotonic() - exec_start_time)
-                    raise OperationError()
+                    if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
+                        # These are responses to our request
+                        if msg['channel'] == 'iopub':
+                            response = None
+                            if msg['msg_type'] == 'execute_result':
+                                response = msg['content']['data']['text/plain']
+                            elif msg['msg_type'] == 'stream':
+                                response = msg['content']['text']
+                            if response:
+                                assert response == output
+                                duration = time.monotonic() - exec_start_time
+                                self.log.msg('Code Execute: complete', action='code-execute', phase='complete', duration=duration, iteration=iteration)
+                                break
                 # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
                 await asyncio.sleep(random.uniform(0, 1))
-            self.log.msg('Code Execute: Complete', action='code-execute', phase='complete', iterations=iteration)
 
 
 
