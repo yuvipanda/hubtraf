@@ -1,0 +1,136 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hubtraf-{{ .Release.Name }}
+  labels:
+    heritage: {{ .Release.Service }}
+    app: hubtraf
+    release: {{ .Release.Name }}
+spec:
+  completions: {{ .Values.completions }}
+  parallelism: {{ default .Values.parallelism .Values.completions }}
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        heritage: {{ .Release.Service }}
+        app: hubtraf
+        release: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: collector-waiter
+      {{ if .Values.hub.ip }}
+      hostAliases:
+      - ip: {{ .Values.hub.ip | quote}}
+        hostnames:
+        - hub
+      {{ end }}
+      volumes:
+      - name: log
+        emptyDir: {}
+      initContainers:
+      # Make sure we wait until the collector is ready before starting our stress tests
+      # This way we don't lose any events!
+      - command:
+          - kubectl
+          - -v=8
+          - --namespace
+          - {{ .Release.Namespace }}
+          - rollout
+          - status
+          - --watch
+          - deployment/collector
+        image: yuvipanda/kubectl:v1.9.0
+        name: wait-for-collector
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: fluent-bit
+        image: fluent/fluent-bit:0.12
+        volumeMounts:
+        - name: log
+          mountPath: /var/log/hubtraf
+        command:
+          - /bin/sh
+          - -c
+          - |
+            # fluent-bit crashes hard if files don't exist when it starts
+            # Since container start order is non-deterministic, we can't guarantee that
+            # So let's sleep until we know the file exists!
+            # TODO: File bug with fluent-bit
+            set -ex
+            while [ ! -f /var/log/hubtraf/hubtraf.log ]; do
+            sleep 1s;
+            done
+            /fluent-bit/bin/fluent-bit \
+            -R /fluent-bit/etc/parsers.conf \
+            -i tail -p path=/var/log/hubtraf/*.log \
+            -o forward -p host=collector -p match=* \
+            -o stdout -p match=*
+      - command:
+          - /bin/bash
+          - -c
+          - |
+            hubtraf \
+            --json \
+            --user-session-min-runtime {{ .Values.users.runTime.min | quote }} \
+            --user-session-max-runtime {{ .Values.users.runTime.max | quote }} \
+            --user-session-max-start-delay {{ .Values.users.startTime.max | quote }} \
+            {{ if .Values.hub.ip }}http://hub{{ else }}{{ required "hub.url is required" .Values.hub.url | quote }}{{ end }} \
+            {{ .Values.users.count | quote }} \
+            | tee /var/log/hubtraf/hubtraf.log
+        image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        name: stress
+        volumeMounts:
+        - name: log
+          mountPath: /var/log/hubtraf
+---
+{{ if .Values.rbac.enabled }}
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: collector-waiter
+rules:
+- apiGroups: ["apps", "extensions"] # "" indicates the core API group
+  resources: ["deployments"]
+  verbs: ["get", "watch", "list"]
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: collector-waiter-kubectl-{{ .Release.Name }}
+rules:
+- nonResourceURLs: ["/api/*", "/apis/*"]
+  verbs: ["get"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: collector-waiter
+subjects:
+- kind: ServiceAccount
+  namespace: {{ .Release.Namespace }}
+  name: collector-waiter
+roleRef:
+  kind: Role
+  name: collector-waiter
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: collector-waiter-kubectl-{{ .Release.Name }}
+subjects:
+- kind: ServiceAccount
+  namespace: {{ .Release.Namespace }}
+  name: collector-waiter
+roleRef:
+  kind: ClusterRole
+  name: collector-waiter-kubectl-{{ .Release.Name }}
+  apiGroup: rbac.authorization.k8s.io
+{{ end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector-waiter
