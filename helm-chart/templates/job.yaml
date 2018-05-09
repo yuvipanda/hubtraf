@@ -77,7 +77,7 @@ spec:
             --user-session-max-start-delay {{ .Values.users.startTime.max | quote }} \
             {{ if .Values.hub.ip }}http://hub{{ else }}{{ required "hub.url is required" .Values.hub.url | quote }}{{ end }} \
             {{ .Values.users.count | quote }} \
-            | tee /var/log/hubtraf/hubtraf.log
+            2>&1 | tee /var/log/hubtraf/hubtraf.log
         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         name: stress
