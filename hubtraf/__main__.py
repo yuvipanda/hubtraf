@@ -67,7 +67,7 @@ class User:
         self.log.msg('Login: Complete', action='login', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
 
-    async def ensure_server(self, timeout=300, server_start_maxwait=60):
+    async def ensure_server(self, timeout=300, spawn_refresh_time=30):
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
@@ -76,17 +76,21 @@ class User:
         while True:
             i += 1
             self.log.msg(f'Server: Attmepting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
-            resp = await self.session.get(self.hub_url / 'hub/spawn')
+            try:
+                resp = await self.session.get(self.hub_url / 'hub/spawn')
+            except Exception as e:
+                self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
+                continue
             if resp.url == self.notebook_url / 'tree':
                 self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.log.msg('Server: Failed', action='server-start', phase='failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
                 raise OperationError()
             # Always log retries, so we can count 'in-progress' actions
-            self.log.msg('Server: Retrying', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.log.msg('Server: Retrying after response {}'.format(str(resp)), action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
-            await asyncio.sleep(max(i ^ 2, server_start_maxwait) + random.uniform(0, server_start_maxwait))
+            await asyncio.sleep(random.uniform(0, spawn_refresh_time))
         
         self.state = User.States.SERVER_STARTED
 
@@ -94,10 +98,14 @@ class User:
         assert self.state == User.States.SERVER_STARTED
         self.log.msg('Server: Stopping', action='server-stop', phase='start')
         start_time = time.monotonic()
-        resp = await self.session.delete(
-            self.hub_url / 'hub/api/users' / self.username / 'server',
-            headers={'Referer': str(self.hub_url / 'hub/')}
-        )
+        try:
+            resp = await self.session.delete(
+                self.hub_url / 'hub/api/users' / self.username / 'server',
+                headers={'Referer': str(self.hub_url / 'hub/')}
+            )
+        except Exception as e:
+            self.log.msg('Server: Failed {}'.format(str(e)), action='server-stop', phase='failed', duration=time.monotonic() - start_time)
+            raise OperationError()
         if resp.status != 202 and resp.status != 204:
             self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
             raise OperationError()
@@ -110,7 +118,11 @@ class User:
         self.log.msg('Kernel: Starting', action='kernel-start', phase='start')
         start_time = time.monotonic()
 
-        resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
+        try:
+            resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
+        except Exception as e:
+            self.log.msg('Kernel: Start failed {}'.format(str(e)), action='kernel-start', phase='failed', duration=time.monotonic() - start_time)
+            raise OperationError()
 
         if resp.status != 201:
             self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
@@ -131,8 +143,16 @@ class User:
 
         self.log.msg('Kernel: Stopping', action='kernel-stop', phase='start')
         start_time = time.monotonic()
-        resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
-        assert resp.status == 204
+        try:
+            resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
+        except Exception as e:
+            self.log.msg('Kernel:Failed Stopped {}'.format(str(e)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            raise OperationError()
+
+        if resp.status != 204:
+            self.log.msg('Kernel:Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            raise OperationError()
+
         self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.SERVER_STARTED
 
@@ -161,40 +181,60 @@ class User:
     async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
         self.log.msg('WS: Connecting', action='kernel-connect', phase='start')
-        async with self.session.ws_connect(channel_url) as ws:
-            self.log.msg('WS: Connected', action='kernel-connect', phase='complete')
-            start_time = time.monotonic()
-            iteration = 0
-            while time.monotonic() - start_time < repeat_time_seconds:
-                exec_start_time = time.monotonic()
-                iteration += 1
-                self.log.msg('Code Execute: Started', action='code-execute', phase='start', iteration=iteration)
-                msg_id = str(uuid.uuid4())
-                await ws.send_json(self.request_execute_code(msg_id, code))
-                async for msg_text in ws:
-                    if msg_text.type != aiohttp.WSMsgType.TEXT:
-                        self.log.msg('WS: Unexpected message type', action='code-execute', phase='failure', message_type=msg_text.type, message=str(msg_text))
-                        raise OperationError()
+        is_connected = False
+        try:
+            async with self.session.ws_connect(channel_url) as ws:
+                is_connected = True
+                self.log.msg('WS: Connected', action='kernel-connect', phase='complete')
+                start_time = time.monotonic()
+                iteration = 0
+                self.log.msg('Code Execute: Started', action='code-execute', phase='start')
+                while time.monotonic() - start_time < repeat_time_seconds:
+                    exec_start_time = time.monotonic()
+                    iteration += 1
+                    msg_id = str(uuid.uuid4())
+                    await ws.send_json(self.request_execute_code(msg_id, code))
+                    async for msg_text in ws:
+                        if msg_text.type != aiohttp.WSMsgType.TEXT:
+                            self.log.msg(
+                                'WS: Unexpected message type',
+                                action='code-execute', phase='failure',
+                                iteration=iteration,
+                                message_type=msg_text.type, message=str(msg_text),
+                                duration=time.monotonic() - exec_start_time
+                            )
+                            raise OperationError()
 
-                    msg = msg_text.json()
+                        msg = msg_text.json()
 
-                    if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
-                        # These are responses to our request
-                        if msg['channel'] == 'iopub':
-                            response = None
-                            if msg['msg_type'] == 'execute_result':
-                                response = msg['content']['data']['text/plain']
-                            elif msg['msg_type'] == 'stream':
-                                response = msg['content']['text']
-                            if response:
-                                assert response == output
-                                duration = time.monotonic() - exec_start_time
-                                self.log.msg('Code Execute: complete', action='code-execute', phase='complete', duration=duration, iteration=iteration)
-                                break
-                # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
-                await asyncio.sleep(random.uniform(0, 1))
+                        if 'parent_header' in msg and msg['parent_header'].get('msg_id') == msg_id:
+                            # These are responses to our request
+                            if msg['channel'] == 'iopub':
+                                response = None
+                                if msg['msg_type'] == 'execute_result':
+                                    response = msg['content']['data']['text/plain']
+                                elif msg['msg_type'] == 'stream':
+                                    response = msg['content']['text']
+                                if response:
+                                    assert response == output
+                                    duration = time.monotonic() - exec_start_time
+                                    break
+                    # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
+                    await asyncio.sleep(random.uniform(0, 1))
 
-
+                self.log.msg(
+                    'Code Execute: complete',
+                    action='code-execute', phase='complete',
+                    duration=duration, iteration=iteration
+                )
+        except Exception as e:
+            if type(e) is OperationError:
+                raise
+            if is_connected:
+                self.log.msg('Code Execute: Failed {}'.format(str(e)), action='code-execute', phase='failure')
+            else:
+                self.log.msg('WS: Failed {}'.format(str(e)), action='kernel-connect', phase='failure')
+            raise OperationError()
 
 
 async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
@@ -208,10 +248,18 @@ async def simulate_user(hub_url, username, password, delay_seconds, code_execute
         except OperationError:
             pass
         finally:
-            if u.state == User.States.KERNEL_STARTED:
-                await u.stop_kernel()
-            if u.state == User.States.SERVER_STARTED:
-                await u.stop_server()
+            try:
+                if u.state == User.States.KERNEL_STARTED:
+                    await u.stop_kernel()
+            except OperationError:
+                # We'll try to sto the server anyway
+                pass
+            try:
+                if u.state == User.States.SERVER_STARTED:
+                    await u.stop_server()
+            except OperationError:
+                # Nothing to do
+                pass
 
 def main():
     argparser = argparse.ArgumentParser()
@@ -275,4 +323,5 @@ def main():
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
     
-
+if __name__ == '__main__':
+    main()
