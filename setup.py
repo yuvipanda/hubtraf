@@ -8,7 +8,7 @@ setup(
     author='YuviPanda',
     author_email='yuvipanda@gmail.com',
     packages=find_packages(),
-    install_requires=['aiohttp', 'structlog'],
+    install_requires=['aiohttp', 'structlog', 'oauthlib'],
     entry_points={
         'console_scripts': [
             'hubtraf = hubtraf.__main__:main',

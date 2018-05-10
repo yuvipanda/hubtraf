@@ -9,12 +9,15 @@ import asyncio
 import async_timeout
 import structlog
 import time
+from oauthlib.oauth1.rfc5849 import signature
 
 logger = structlog.get_logger()
 
 class OperationError(Exception):
     pass
 
+# FIXME: HACK: This is terrible, refactor this to be something less crappy
+LOGIN_TYPE = 'dummy'
 
 class User:
     class States(Enum):
@@ -42,6 +45,28 @@ class User:
             username=username
         )
 
+    def lti_login_data(self, username, consumer_key, consumer_secret, launch_url, extra_args={}):
+        args = {
+            'oauth_consumer_key': consumer_key,
+            'oauth_timestamp': str(time.time()),
+            'oauth_nonce': str(uuid.uuid4()),
+            'user_id': username
+        }
+
+        args.update(extra_args)
+
+        base_string = signature.construct_base_string(
+            'POST',
+            signature.normalize_base_string_uri(launch_url),
+            signature.normalize_parameters(
+                signature.collect_parameters(body=args, headers={})
+            )
+        )
+
+        args['oauth_signature'] = signature.sign_hmac_sha1(base_string, consumer_secret, None)
+        return args
+
+
     async def login(self):
         """
         Log in to the JupyterHub with given credentials.
@@ -53,12 +78,21 @@ class User:
         # We only log in if we haven't done anything already!
         assert self.state == User.States.CLEAR
 
-        url = self.hub_url / 'hub/login'
+        if LOGIN_TYPE == 'LTI':
+            url = self.hub_url / 'hub/lti/launch'
+            data = self.lti_login_data(self.username, 'thekey', 'thevalue', str(url), {'resource_link_id': self.username})
+        else:
+            url = self.hub_url / 'hub/login'
+            data = {'username': self.username, 'password': self.password}
         self.log.msg('Login: Starting', action='login', phase='start')
         start_time = time.monotonic()
-        resp = await self.session.post(url, data={'username': self.username, 'password': self.password}, allow_redirects=False)
+        try:
+            resp = await self.session.post(url, data=data, allow_redirects=False)
+        except Exception as e:
+            self.log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
+            raise OperationError()
         if resp.status != 302:
-            self.log.msg('Login: Failed {}'.format(str(await resp.text())), action='login', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed', duration=time.monotonic() - start_time)
             raise OperationError()
 
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
