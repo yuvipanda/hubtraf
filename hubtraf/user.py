@@ -91,7 +91,9 @@ class User:
             except Exception as e:
                 self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
                 continue
-            if resp.url == self.notebook_url / 'tree':
+            # Check if paths match, ignoring query string (primarily, redirects=N), fragments
+            target_url = self.notebook_url / 'tree'
+            if resp.url.scheme == target_url.scheme and resp.url.host == target_url.host and resp.url.path == target_url.path:
                 self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
