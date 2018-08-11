@@ -1,9 +1,12 @@
 completions: 1
 image:
-  repository: yuvipanda/jupyterhub-stress
-  tag: v0.4.5
+  repository: yuvipanda/hubtraf
+  tag: v2
   pullPolicy: Always
 resources: {}
+
+rbac:
+  enabled: true
 
 hub:
   url: ""
