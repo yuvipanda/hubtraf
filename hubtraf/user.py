@@ -85,7 +85,7 @@ class User:
         i = 0
         while True:
             i += 1
-            self.log.msg(f'Server: Attmepting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
+            self.log.msg(f'Server: Attempting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
             try:
                 resp = await self.session.get(self.hub_url / 'hub/spawn')
             except Exception as e:
@@ -247,4 +247,3 @@ class User:
             else:
                 self.log.msg('WS: Failed {}'.format(str(e)), action='kernel-connect', phase='failure')
             raise OperationError()
-
