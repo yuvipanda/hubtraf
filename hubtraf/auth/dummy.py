@@ -15,8 +15,10 @@ async def login_dummy(session, hub_url, log, username, password):
     try:
         resp = await session.post(url, data={'username': username, 'password': password}, allow_redirects=False)
     except Exception as e:
-        log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed',
+                duration=time.monotonic() - start_time)
         raise OperationError()
     if resp.status != 302:
-        log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed',
+                duration=time.monotonic() - start_time)
         raise OperationError()
