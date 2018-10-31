@@ -2,7 +2,6 @@ import asyncio
 import structlog
 import argparse
 import random
-import time
 import socket
 from hubtraf.user import User, OperationError
 from hubtraf.auth.dummy import login_dummy
@@ -16,7 +15,7 @@ async def simulate_user(hub_url, username, password, delay_seconds, code_execute
             await u.login()
             await u.ensure_server()
             await u.start_kernel()
-            await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds)
+            await u.assert_code_output("5 * 4", "20", code_execute_seconds)
         except OperationError:
             pass
         finally:

@@ -1,15 +1,14 @@
-from enum import Enum, auto
+from enum import Enum
 import aiohttp
-import socket
 import uuid
 import random
 from yarl import URL
 import asyncio
-import async_timeout
 import structlog
 import time
 
 logger = structlog.get_logger()
+
 
 class OperationError(Exception):
     pass
@@ -50,6 +49,7 @@ class User:
         self.username = username
         self.hub_url = URL(hub_url)
 
+        self.kernel_id = None
         self.state = User.States.CLEAR
         self.notebook_url = self.hub_url / 'user' / self.username
 
@@ -78,6 +78,14 @@ class User:
         self.state = User.States.LOGGED_IN
 
     async def ensure_server(self, timeout=300, spawn_refresh_time=30):
+        """
+        Ensures that after the login a Jupyter Notebook server is started.
+        According to the configuration that might e.g. mean a docker container is started.
+
+        :param timeout: Seconds until server must be started, otherwise failure
+        :param spawn_refresh_time: Maximum number of seconds until retry
+        :return: None
+        """
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
@@ -85,28 +93,39 @@ class User:
         i = 0
         while True:
             i += 1
-            self.log.msg(f'Server: Attmepting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
+            self.log.msg(f'Server: Attempting to Start', action='server-start', phase='attempt-start', attempt=i + 1)
             try:
                 resp = await self.session.get(self.hub_url / 'hub/spawn')
             except Exception as e:
-                self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1,
+                             phase='attempt-failed', duration=time.monotonic() - start_time)
                 continue
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
             target_url = self.notebook_url / 'tree'
-            if resp.url.scheme == target_url.scheme and resp.url.host == target_url.host and resp.url.path == target_url.path:
-                self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+            if resp.url.scheme == target_url.scheme \
+                    and resp.url.host == target_url.host \
+                    and resp.url.path == target_url.path:
+                self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1,
+                             duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Timeout', action='server-start', phase='failed',
+                             duration=time.monotonic() - start_time)
                 raise OperationError()
             # Always log retries, so we can count 'in-progress' actions
-            self.log.msg('Server: Retrying after response {}'.format(str(resp)), action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.log.msg('Server: Retrying after response {}'.format(str(resp)), action='server-start',
+                         phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
         
         self.state = User.States.SERVER_STARTED
 
     async def stop_server(self):
+        """
+        Stops current Jupyter Notebook server.
+
+        :return: None
+        """
         assert self.state == User.States.SERVER_STARTED
         self.log.msg('Server: Stopping', action='server-stop', phase='start')
         start_time = time.monotonic()
@@ -116,28 +135,39 @@ class User:
                 headers={'Referer': str(self.hub_url / 'hub/')}
             )
         except Exception as e:
-            self.log.msg('Server: Failed {}'.format(str(e)), action='server-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Server: Failed {}'.format(str(e)), action='server-stop', phase='failed',
+                         duration=time.monotonic() - start_time)
             raise OperationError()
         if resp.status != 202 and resp.status != 204:
-            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
+            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp),
+                         duration=time.monotonic() - start_time)
             raise OperationError()
-        self.log.msg('Server: Stopped', action='server-stop', phase='complete', duration=time.monotonic() - start_time)
+        self.log.msg('Server: Stopped', action='server-stop', phase='complete',
+                     duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
 
     async def start_kernel(self):
+        """
+        Starts kernel.
+
+        :return: None
+        """
         assert self.state == User.States.SERVER_STARTED
 
         self.log.msg('Kernel: Starting', action='kernel-start', phase='start')
         start_time = time.monotonic()
 
         try:
-            resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
+            resp = await self.session.post(self.notebook_url / 'api/kernels',
+                                           headers={'X-XSRFToken': self.xsrf_token})
         except Exception as e:
-            self.log.msg('Kernel: Start failed {}'.format(str(e)), action='kernel-start', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Kernel: Start failed {}'.format(str(e)), action='kernel-start', phase='failed',
+                         duration=time.monotonic() - start_time)
             raise OperationError()
 
         if resp.status != 201:
-            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
+            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp),
+                         duration=time.monotonic() - start_time)
             raise OperationError()
         self.kernel_id = (await resp.json())['id']
         self.log.msg('Kernel: Started', action='kernel-start', phase='complete', duration=time.monotonic() - start_time)
@@ -151,24 +181,38 @@ class User:
         return xsrf_token
 
     async def stop_kernel(self):
+        """
+        Stops kernel which has been started before.
+
+        :return: None
+        """
         assert self.state == User.States.KERNEL_STARTED
 
         self.log.msg('Kernel: Stopping', action='kernel-stop', phase='start')
         start_time = time.monotonic()
         try:
-            resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
+            resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id,
+                                             headers={'X-XSRFToken': self.xsrf_token})
         except Exception as e:
-            self.log.msg('Kernel:Failed Stopped {}'.format(str(e)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Kernel: Failed Stopped {}'.format(str(e)), action='kernel-stop', phase='failed',
+                         duration=time.monotonic() - start_time)
             raise OperationError()
 
         if resp.status != 204:
-            self.log.msg('Kernel:Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Kernel: Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='failed',
+                         duration=time.monotonic() - start_time)
             raise OperationError()
 
         self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.SERVER_STARTED
 
-    def request_execute_code(self, msg_id, code):
+    def _request_execute_code(self, msg_id, code):
+        """
+
+        :param msg_id: The message id to use
+        :param code: The python code to execute
+        :return: A python representation of what will be sent to the kernel as JSON
+        """
         return {
             "header": {
                 "msg_id": msg_id,
@@ -190,7 +234,14 @@ class User:
             "channel": "shell"
         }
 
-    async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
+    async def assert_code_output(self, code, output="", timeout=300):
+        """
+
+        :param code: Python code to execute
+        :param output: The expected output. If 'None' is expected, actually an empty string is the output
+        :param timeout: The
+        :return:
+        """
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
         self.log.msg('WS: Connecting', action='kernel-connect', phase='start')
         is_connected = False
@@ -201,11 +252,11 @@ class User:
                 start_time = time.monotonic()
                 iteration = 0
                 self.log.msg('Code Execute: Started', action='code-execute', phase='start')
-                while time.monotonic() - start_time < repeat_time_seconds:
+                while time.monotonic() - start_time < timeout:
                     exec_start_time = time.monotonic()
                     iteration += 1
                     msg_id = str(uuid.uuid4())
-                    await ws.send_json(self.request_execute_code(msg_id, code))
+                    await ws.send_json(self._request_execute_code(msg_id, code))
                     async for msg_text in ws:
                         if msg_text.type != aiohttp.WSMsgType.TEXT:
                             self.log.msg(
@@ -231,7 +282,7 @@ class User:
                                     assert response == output
                                     duration = time.monotonic() - exec_start_time
                                     break
-                    # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
+                    # Sleep a random amount of time between 0 and 1 second, so we aren't busy-looping
                     await asyncio.sleep(random.uniform(0, 1))
 
                 self.log.msg(
@@ -247,4 +298,3 @@ class User:
             else:
                 self.log.msg('WS: Failed {}'.format(str(e)), action='kernel-connect', phase='failure')
             raise OperationError()
-
