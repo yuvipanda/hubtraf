@@ -14,22 +14,36 @@ logger = structlog.get_logger()
 class OperationError(Exception):
     pass
 
-
 class User:
     class States(Enum):
         CLEAR = 1
         LOGGED_IN = 2
-        SERVER_STARTED = 3
-        KERNEL_STARTED = 4
+        SERVER_STARTING= 3
+        SERVER_STARTED = 4
+        KERNEL_STARTED = 5
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        async def on_request_start(session, trace_config_ctx, params):
+            print("Starting %s request for %s. headers: %s" % (params.method, params.url, params.headers))
+        async def on_request_end(session, trace_config_ctx, params):
+            print("Responsing %s request for %s. response: %s" % (params.method, params.url, params.response))
+        async def on_request_chunk_sent(session, trace_config_ctx, params):
+            print("Send chunk %s" % (params.chunk))
+        trace_config = aiohttp.TraceConfig()
+        trace_config.on_request_end.append(on_request_end)
+        trace_config.on_request_start.append(on_request_start)
+        trace_config.on_request_chunk_sent.append(on_request_chunk_sent)
+ 
+        if self.debug:
+            self.session = aiohttp.ClientSession(trace_configs=[trace_config])
+        else:
+            self.session = aiohttp.ClientSession()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close() 
 
-    def __init__(self, username, hub_url, login_handler):
+    def __init__(self, username, hub_url, login_handler, debug=False):
         """
         A simulated JupyterHub user.
 
@@ -57,6 +71,7 @@ class User:
             username=username
         )
         self.login_handler = login_handler
+        self.debug = debug
 
     async def login(self):
         """
@@ -68,7 +83,6 @@ class User:
         """
         # We only log in if we haven't done anything already!
         assert self.state == User.States.CLEAR
-
         start_time = time.monotonic()
         await self.login_handler(log=self.log, hub_url=self.hub_url, session=self.session, username=self.username)
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
@@ -77,35 +91,61 @@ class User:
         self.log.msg('Login: Complete', action='login', phase='complete', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
 
-    async def ensure_server(self, timeout=300, spawn_refresh_time=30):
+    async def start_server(self):
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
-        self.log.msg(f'Server: Starting', action='server-start', phase='start')
+
+        self.log.msg(f'Server: Attempting to start', action='server-start', phase='attempt-start')
+        try:
+            form = aiohttp.FormData()
+            form.add_field('group', 'phusers', content_type='form-data')
+            form.add_field('instance_type', 'cpu-only', content_type='form-data')
+            form.add_field('image', 'base-notebook', content_type='form-data')
+            resp = await self.session.post(self.hub_url / 'hub/spawn', data=form, allow_redirects=False)
+        except Exception as e:
+            print(e)
+            raise OperationError()
+        
+        if resp.status != 302:
+            self.log.msg('Server: Failed {}'.format(str(resp)), action='server-start', phase='attempt-failed', duration=time.monotonic() - start_time)
+            raise OperationError()
+        
+        self.state = User.States.SERVER_STARTING
+        
+
+    async def ensure_server(self, timeout=300, spawn_refresh_time=30):
+        assert self.state == User.States.SERVER_STARTING
+
+        start_time = time.monotonic()
         i = 0
         while True:
-            i += 1
-            self.log.msg(f'Server: Attempting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
+            self.log.msg(f'Server: Checking progress', action='server-starting', phase='check-start', attempt=i + 1)
             try:
                 resp = await self.session.get(self.hub_url / 'hub/spawn')
             except Exception as e:
-                self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Failed {}'.format(str(e)), action='server-starting', attempt=i + 1, phase='check-failed', duration=time.monotonic() - start_time)
                 continue
+
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
-            target_url = self.notebook_url / 'tree'
+            target_url = self.notebook_url / 'lab'
             if resp.url.scheme == target_url.scheme and resp.url.host == target_url.host and resp.url.path == target_url.path:
-                self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.log.msg('Server: Started', action='server-starting', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
+                self.log.msg('Server: Timeout', action='server-starting', phase='failed', duration=time.monotonic() - start_time)
                 raise OperationError()
+
             # Always log retries, so we can count 'in-progress' actions
-            self.log.msg('Server: Retrying after response {}'.format(str(resp)), action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.log.msg('Server: In progress', action='server-starting', phase='in-progress', duration=time.monotonic() - start_time, attempt=i + 1)
+            
             # FIXME: Add jitter?
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
+            i += 1
         
         self.state = User.States.SERVER_STARTED
 
+    # https://hub.kent.dev.primehub.io/hub/api/users/phuser-0/server
     async def stop_server(self):
         assert self.state == User.States.SERVER_STARTED
         self.log.msg('Server: Stopping', action='server-stop', phase='start')
@@ -118,7 +158,7 @@ class User:
         except Exception as e:
             self.log.msg('Server: Failed {}'.format(str(e)), action='server-stop', phase='failed', duration=time.monotonic() - start_time)
             raise OperationError()
-        if resp.status != 202 and resp.status != 204:
+        if resp.status != 202 and resp.status != 204 and resp.status != 500:
             self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
             raise OperationError()
         self.log.msg('Server: Stopped', action='server-stop', phase='complete', duration=time.monotonic() - start_time)
@@ -162,7 +202,7 @@ class User:
             raise OperationError()
 
         if resp.status != 204:
-            self.log.msg('Kernel:Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.log.msg('Kernel:Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='unexpected-status', duration=time.monotonic() - start_time)
             raise OperationError()
 
         self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete', duration=time.monotonic() - start_time)

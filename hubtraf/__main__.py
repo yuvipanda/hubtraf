@@ -6,14 +6,16 @@ import time
 import socket
 from hubtraf.user import User, OperationError
 from hubtraf.auth.dummy import login_dummy
+from hubtraf.auth.keycloak import login_keycloak
 from functools import partial
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds, debug=False):
     await asyncio.sleep(delay_seconds)
-    async with User(username, hub_url, partial(login_dummy, password=password)) as u:
+    async with User(username, hub_url, partial(login_keycloak, password=password), debug=debug) as u:
         try:
             await u.login()
+            await u.start_server()
             await u.ensure_server()
             await u.start_kernel()
             await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds)
@@ -35,6 +37,10 @@ async def simulate_user(hub_url, username, password, delay_seconds, code_execute
 
 def main():
     argparser = argparse.ArgumentParser()
+    argparser.add_argument(
+        '--debug',
+        action='store_true',
+        help='True if enable showing debug info of the http request')
     argparser.add_argument(
         'hub_url',
         help='Hub URL to send traffic to (without a trailing /)'
@@ -90,7 +96,8 @@ def main():
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime)),
+            debug=args.debug
         ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
