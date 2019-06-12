@@ -1,0 +1,9 @@
+---
+hub:
+  group: phusers
+  instance_type: cpu-only
+  image: base-notebook
+
+notebook:
+  code_file: "./benchmark/fibonacci.py"
+  assert_output: "21"

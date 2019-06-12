@@ -43,7 +43,7 @@ class User:
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close() 
 
-    def __init__(self, username, hub_url, login_handler, debug=False):
+    def __init__(self, username, hub_url, login_handler, debug=False, config=None):
         """
         A simulated JupyterHub user.
 
@@ -72,6 +72,7 @@ class User:
         )
         self.login_handler = login_handler
         self.debug = debug
+        self.config = config
 
     async def login(self):
         """
@@ -99,9 +100,15 @@ class User:
         self.log.msg(f'Server: Attempting to start', action='server-start', phase='attempt-start')
         try:
             form = aiohttp.FormData()
-            form.add_field('group', 'phusers', content_type='form-data')
-            form.add_field('instance_type', 'cpu-only', content_type='form-data')
-            form.add_field('image', 'base-notebook', content_type='form-data')
+            if self.config:
+                hub = self.config['hub']
+                form.add_field('group', hub['group'], content_type='form-data')
+                form.add_field('instance_type', hub['instance_type'], content_type='form-data')
+                form.add_field('image', hub['image'], content_type='form-data')
+            else:
+                form.add_field('group', 'phusers', content_type='form-data')
+                form.add_field('instance_type', 'cpu-only', content_type='form-data')
+                form.add_field('image', 'base-notebook', content_type='form-data')
             resp = await self.session.post(self.hub_url / 'hub/spawn', data=form, allow_redirects=False)
         except Exception as e:
             print(e)
@@ -280,6 +287,7 @@ class User:
                     duration=duration, iteration=iteration
                 )
         except Exception as e:
+            print(e)
             if type(e) is OperationError:
                 raise
             if is_connected:
