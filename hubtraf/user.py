@@ -92,9 +92,13 @@ class User:
                 self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
                 continue
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
-            target_url = self.notebook_url / 'tree'
-            if resp.url.scheme == target_url.scheme and resp.url.host == target_url.host and resp.url.path == target_url.path:
-                self.log.msg('Server: Started', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+            target_url_tree = self.notebook_url / 'tree'
+            if resp.url.scheme == target_url_tree.scheme and resp.url.host == target_url_tree.host and resp.url.path == target_url_tree.path:
+                self.log.msg('Server: Started (Jupyter Notebook)', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                break
+            target_url_lab = self.notebook_url / 'lab'
+            if resp.url.scheme == target_url_lab.scheme and resp.url.host == target_url_lab.host and resp.url.path == target_url_lab.path:
+                self.log.msg('Server: Started (JupyterLab)', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
                 self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
