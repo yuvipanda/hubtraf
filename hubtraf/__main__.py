@@ -9,9 +9,13 @@ from hubtraf.auth.dummy import login_dummy
 from functools import partial
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(
+        hub_url, username, password, delay_seconds,
+        exec_seconds, port=None):
     await asyncio.sleep(delay_seconds)
-    async with User(username, hub_url, partial(login_dummy, password=password)) as u:
+    async with User(
+            username, hub_url, partial(login_dummy, password=password),
+            port=port) as u:
         try:
             await u.login()
             await u.ensure_server()
@@ -68,6 +72,12 @@ def main():
         help='Max seconds by which all users should have logged in'
     )
     argparser.add_argument(
+        '--port',
+        default=None,
+        type=int,
+        help='Port for jupyterhub server'
+    )
+    argparser.add_argument(
         '--json',
         action='store_true',
         help='True if output should be JSON formatted'
@@ -90,7 +100,8 @@ def main():
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime)),
+            port=args.port
         ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))
