@@ -1,4 +1,0 @@
-aiohttp
-structlog
-oauthlib
-yarl
