@@ -141,7 +141,7 @@ class User:
             raise OperationError()
 
         if resp.status != 201:
-            self.log.msg('Kernel: Ststart failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
+            self.log.msg('Kernel: Start failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
             raise OperationError()
         self.kernel_id = (await resp.json())['id']
         self.log.msg('Kernel: Started', action='kernel-start', phase='complete', duration=time.monotonic() - start_time)
