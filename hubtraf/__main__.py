@@ -9,14 +9,21 @@ from hubtraf.auth.dummy import login_dummy
 from functools import partial
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(
+        hub_url, username, password, delay_seconds,
+        exec_seconds, code_output=None, port=None):
+    if code_output is None:
+        code_output = ("5 * 4", "20")
+    code, output = code_output
     await asyncio.sleep(delay_seconds)
-    async with User(username, hub_url, partial(login_dummy, password=password)) as u:
+    async with User(
+            username, hub_url, partial(login_dummy, password=password),
+            port=port) as u:
         try:
             await u.login()
             await u.ensure_server()
             await u.start_kernel()
-            await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds)
+            await u.assert_code_output(code, output, 5, exec_seconds)
         except OperationError:
             pass
         finally:
@@ -68,9 +75,27 @@ def main():
         help='Max seconds by which all users should have logged in'
     )
     argparser.add_argument(
+        '--port',
+        default=None,
+        type=int,
+        help='Port for jupyterhub server'
+    )
+    argparser.add_argument(
         '--json',
         action='store_true',
         help='True if output should be JSON formatted'
+    )
+    argparser.add_argument(
+        '--code',
+        default="5 * 4",
+        type=str,
+        help='Code for users to execute'
+    )
+    argparser.add_argument(
+        '--output',
+        default="20",
+        type=str,
+        help='Expected result of `--code`'
     )
     args = argparser.parse_args()
 
@@ -90,7 +115,9 @@ def main():
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime)),
+            code_output=(args.code, args.output),
+            port=args.port
         ))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.gather(*awaits))

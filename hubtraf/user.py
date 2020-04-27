@@ -29,7 +29,7 @@ class User:
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close() 
 
-    def __init__(self, username, hub_url, login_handler):
+    def __init__(self, username, hub_url, login_handler, port=None):
         """
         A simulated JupyterHub user.
 
@@ -48,7 +48,8 @@ class User:
                         Usually a partial of a generic function is passed in here.
         """
         self.username = username
-        self.hub_url = URL(hub_url)
+        print(hub_url)
+        self.hub_url = URL(hub_url).with_port(port)
 
         self.state = User.States.CLEAR
         self.notebook_url = self.hub_url / 'user' / self.username
