@@ -104,7 +104,7 @@ class User:
                 self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
                 return False
             # Always log retries, so we can count 'in-progress' actions
-            self.log.msg('Server: Retrying after response {}'.format(str(resp)), action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.log.msg(f'Server: Retrying after response code {resp.status}', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
 
