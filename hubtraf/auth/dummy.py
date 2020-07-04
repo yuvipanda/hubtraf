@@ -1,5 +1,4 @@
 import time
-from hubtraf.user import OperationError
 
 
 async def login_dummy(session, hub_url, log, username, password):
@@ -16,7 +15,8 @@ async def login_dummy(session, hub_url, log, username, password):
         resp = await session.post(url, data={'username': username, 'password': password}, allow_redirects=False)
     except Exception as e:
         log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
-        raise OperationError()
+        return False
     if resp.status != 302:
         log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed', duration=time.monotonic() - start_time)
-        raise OperationError()
+        return False
+    return True

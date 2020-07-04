@@ -4,34 +4,45 @@ import argparse
 import random
 import time
 import socket
-from hubtraf.user import User, OperationError
+from hubtraf.user import User
 from hubtraf.auth.dummy import login_dummy
 from functools import partial
+from collections import Counter
 
 
 async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
     await asyncio.sleep(delay_seconds)
     async with User(username, hub_url, partial(login_dummy, password=password)) as u:
         try:
-            await u.login()
-            await u.ensure_server()
-            await u.start_kernel()
-            await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds)
-        except OperationError:
-            pass
+            if not await u.login():
+                return 'login'
+            if not await u.ensure_server():
+                return 'start-server'
+            if not await u.start_kernel():
+                return 'start-kernel'
+            if not await u.assert_code_output("5 * 4", "20", 5, code_execute_seconds):
+                return 'run-code'
+            return 'completed'
         finally:
-            try:
-                if u.state == User.States.KERNEL_STARTED:
-                    await u.stop_kernel()
-            except OperationError:
-                # We'll try to sto the server anyway
-                pass
-            try:
-                if u.state == User.States.SERVER_STARTED:
-                    await u.stop_server()
-            except OperationError:
-                # Nothing to do
-                pass
+            if u.state == User.States.KERNEL_STARTED:
+                await u.stop_kernel()
+                await u.stop_server()
+
+
+async def run(args):
+    # FIXME: Pass in individual arguments, not argparse object
+    awaits = []
+    for i in range(args.user_count):
+        awaits.append(simulate_user(
+            args.hub_url,
+            f'{args.user_prefix}-' + str(i),
+            'hello',
+            int(random.uniform(0, args.user_session_max_start_delay)),
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+        ))
+
+    outputs = await asyncio.gather(*awaits)
+    print(Counter(outputs))
 
 def main():
     argparser = argparse.ArgumentParser()
@@ -83,17 +94,9 @@ def main():
 
     structlog.configure(processors=processors)
 
-    awaits = []
-    for i in range(args.user_count):
-        awaits.append(simulate_user(
-            args.hub_url,
-            f'{args.user_prefix}-' + str(i),
-            'hello',
-            int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
-        ))
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(asyncio.gather(*awaits))
-    
+    loop.run_until_complete(run(args))
+
+
 if __name__ == '__main__':
     main()
