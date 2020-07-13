@@ -55,6 +55,9 @@ class User:
             username=username
         )
         self.login_handler = login_handler
+        self.headers = {
+            'Referer': str(self.hub_url / 'hub/')
+        }
 
     def success(self, kind, **kwargs):
         kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
@@ -90,7 +93,48 @@ class User:
         self.state = User.States.LOGGED_IN
         return True
 
-    async def ensure_server(self, timeout=300, spawn_refresh_time=30):
+    async def ensure_server_api(self, timeout=300, spawn_refresh_time=30):
+        api_url = self.hub_url / 'hub/api'
+        self.headers['Authorization'] = 'token 16c7709a19b04f77a11bc6f4b88a9080'
+
+        async def server_running():
+            async with self.session.get(api_url / 'users' / self.username, headers=self.headers) as resp:
+                userinfo = await resp.json()
+                server = userinfo.get('servers', {}).get('', {})
+                self.debug('server-start', phase='waiting', ready=server.get('ready'), pending=server.get('pending'))
+                return server.get('ready', False)
+
+
+        self.debug('server-start', phase='start')
+        start_time = time.monotonic()
+
+        async with self.session.post(api_url / 'users' / self.username / 'server', headers=self.headers) as resp:
+            if resp.status == 201:
+                # Server created
+                # FIXME: Verify this server is actually up
+                self.success('server-start', duration=time.monotonic() - start_time)
+                self.state = User.States.SERVER_STARTED
+                return True
+            elif resp.status == 202:
+                # Server start request received, not necessarily started
+                # FIXME: Verify somehow?
+                self.debug('server-start', phase='waiting')
+                while not (await server_running()):
+                    await asyncio.sleep(0.5)
+                self.success('server-start', duration=time.monotonic() - start_time)
+                self.state = User.States.SERVER_STARTED
+                return True
+            elif resp.status == 400:
+                body = await resp.json()
+                if body['message'] == f'{self.username} is already running':
+                    self.state = User.States.SERVER_STARTED
+                    return True
+            print(await resp.json())
+            print(resp.request_info)
+            return False
+
+
+    async def ensure_server_simulate(self, timeout=300, spawn_refresh_time=30):
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
@@ -122,6 +166,7 @@ class User:
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
 
         self.state = User.States.SERVER_STARTED
+        self.headers['X-XSRFToken'] = self.xsrf_token
         return True
 
     async def stop_server(self):
@@ -131,7 +176,7 @@ class User:
         try:
             resp = await self.session.delete(
                 self.hub_url / 'hub/api/users' / self.username / 'server',
-                headers={'Referer': str(self.hub_url / 'hub/')}
+                headers=self.headers
             )
         except Exception as e:
             self.failure('server-stop', exception=str(e), duration=time.monotonic() - start_time)
@@ -150,7 +195,7 @@ class User:
         start_time = time.monotonic()
 
         try:
-            resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
+            resp = await self.session.post(self.notebook_url / 'api/kernels', headers=self.headers)
         except Exception as e:
             self.failure('kernel-start', exception=str(e), duration=time.monotonic() - start_time)
             return False
@@ -176,7 +221,7 @@ class User:
         self.debug('kernel-stop', phase='start')
         start_time = time.monotonic()
         try:
-            resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
+            resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers=self.headers)
         except Exception as e:
             self.failure('kernel-stop', exception=str(e), duration=time.monotonic() - start_time)
             return False
@@ -211,7 +256,7 @@ class User:
             "channel": "shell"
         }
 
-    async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
+    async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds=None):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
         self.debug('kernel-connect', phase='start')
         is_connected = False
@@ -222,7 +267,7 @@ class User:
                 start_time = time.monotonic()
                 iteration = 0
                 self.debug('code-execute', phase='start')
-                while time.monotonic() - start_time < repeat_time_seconds:
+                while True:
                     exec_start_time = time.monotonic()
                     iteration += 1
                     msg_id = str(uuid.uuid4())
@@ -251,8 +296,15 @@ class User:
                                     assert response == output
                                     duration = time.monotonic() - exec_start_time
                                     break
-                    # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
-                    await asyncio.sleep(random.uniform(0, 1))
+                    if repeat_time_seconds:
+                        if time.monotonic() - start_time >= repeat_time_seconds:
+                            break
+                        else:
+                            # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
+                            await asyncio.sleep(random.uniform(0, 1))
+                            continue
+                    else:
+                        break
 
                 self.success(
                     'code-execute',

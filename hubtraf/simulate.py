@@ -16,7 +16,7 @@ async def simulate_user(hub_url, username, password, delay_seconds, code_execute
         try:
             if not await u.login():
                 return 'login'
-            if not await u.ensure_server():
+            if not await u.ensure_server_simulate():
                 return 'start-server'
             if not await u.start_kernel():
                 return 'start-kernel'

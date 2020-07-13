@@ -4,7 +4,7 @@ JupyterHub Traffic Simulator
 
 The JupyterHub Traffic Simulator (``hubtraf``) is a Python library,
 application & helm-chart that can simulate users on a JupyterHub. Integration
-testing & performance testing are the primary use cases. It replaces 
+testing & performance testing are the primary use cases. It replaces
 the ``jupyter-loadtest`` project.
 
 What does ``hubtraf`` do?
@@ -64,7 +64,7 @@ via `Zero to JupyterHub <https://zero-to-jupyterhub.readthedocs.io/>`_.
    ===================   =======================================================
 
 The Helm chart installs `fluent-bit <https://fluentbit.io/>`_ to capture logs
-from ``hubtraf`` jobs.  
+from ``hubtraf`` jobs.
 
 
 Python Usage
@@ -84,9 +84,9 @@ Python Usage
 
       cd hubtraf
       pip install .
-      hubtraf hub_url user_count
+      hubtraf-simulate hub_url user_count
 
-      
+
   Additional options included:
 
   =================================  =======================================================

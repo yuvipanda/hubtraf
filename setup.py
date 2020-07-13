@@ -11,7 +11,8 @@ setup(
     install_requires=['aiohttp', 'structlog', 'oauthlib', 'yarl', 'colorama'],
     entry_points={
         'console_scripts': [
-            'hubtraf = hubtraf.__main__:main',
+            'hubtraf-simulate = hubtraf.simulate:main',
+            'hubtraf-check = hubtraf.check:main'
         ],
     }
 )
