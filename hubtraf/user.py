@@ -58,15 +58,15 @@ class User:
 
     def success(self, kind, **kwargs):
         kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
-        print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}', kind, self.username, msg, kwargs_pretty)
+        print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}', kind, self.username,  kwargs_pretty)
 
     def failure(self, kind, **kwargs):
         kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
-        print(f'{colorama.Fore.RED}Failure:{colorama.Style.RESET_ALL}', kind, self.username, msg, kwargs_pretty)
+        print(f'{colorama.Fore.RED}Failure:{colorama.Style.RESET_ALL}', kind, self.username,  kwargs_pretty)
 
-    def debug(self, msg, **kwargs):
-        # Ignore these messages for now hehe
-        pass
+    def debug(self, kind, **kwargs):
+        kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
+        print(f'{colorama.Fore.YELLOW}Debug:{colorama.Style.RESET_ALL}', kind, self.username,  kwargs_pretty)
 
     async def login(self):
         """
@@ -94,15 +94,15 @@ class User:
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
-        self.debug(f'Server: Starting', action='server-start', phase='start')
+        self.debug('server-start', phase='start')
         i = 0
         while True:
             i += 1
-            self.debug(f'Server: Attempting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
+            self.debug('server-start', phase='attempt-start', attempt=i + 1)
             try:
                 resp = await self.session.get(self.hub_url / 'hub/spawn')
             except Exception as e:
-                self.debug('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
+                self.debug('server-start', exception=str(e), attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
                 continue
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
             target_url_tree = self.notebook_url / 'tree'
@@ -117,7 +117,7 @@ class User:
                 self.failure('server-start', phase='failed', duration=time.monotonic() - start_time, reason='timeout')
                 return False
             # Always log retries, so we can count 'in-progress' actions
-            self.debug(f'Server: Retrying after response code {str(resp)}', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.debug('server-start', resp=str(resp), phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
 
@@ -126,7 +126,7 @@ class User:
 
     async def stop_server(self):
         assert self.state == User.States.SERVER_STARTED
-        self.debug('Server: Stopping', action='server-stop', phase='start')
+        self.debug('server-stop', phase='start')
         start_time = time.monotonic()
         try:
             resp = await self.session.delete(
@@ -146,7 +146,7 @@ class User:
     async def start_kernel(self):
         assert self.state == User.States.SERVER_STARTED
 
-        self.debug('Kernel: Starting', action='kernel-start', phase='start')
+        self.debug('kernel-start', phase='start')
         start_time = time.monotonic()
 
         try:
@@ -173,7 +173,7 @@ class User:
     async def stop_kernel(self):
         assert self.state == User.States.KERNEL_STARTED
 
-        self.debug('Kernel: Stopping', action='kernel-stop', phase='start')
+        self.debug('kernel-stop', phase='start')
         start_time = time.monotonic()
         try:
             resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
@@ -213,15 +213,15 @@ class User:
 
     async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
-        self.debug('WS: Connecting', action='kernel-connect', phase='start')
+        self.debug('kernel-connect', phase='start')
         is_connected = False
         try:
             async with self.session.ws_connect(channel_url) as ws:
                 is_connected = True
-                self.debug('WS: Connected', action='kernel-connect', phase='complete')
+                self.debug('kernel-connect', phase='complete')
                 start_time = time.monotonic()
                 iteration = 0
-                self.debug('Code Execute: Started', action='code-execute', phase='start')
+                self.debug('code-execute', phase='start')
                 while time.monotonic() - start_time < repeat_time_seconds:
                     exec_start_time = time.monotonic()
                     iteration += 1
