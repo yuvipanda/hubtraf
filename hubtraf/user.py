@@ -8,6 +8,7 @@ import asyncio
 import async_timeout
 import structlog
 import time
+import colorama
 
 logger = structlog.get_logger()
 
@@ -55,6 +56,18 @@ class User:
         )
         self.login_handler = login_handler
 
+    def success(self, kind, **kwargs):
+        kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
+        print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}', kind, self.username, msg, kwargs_pretty)
+
+    def failure(self, kind, **kwargs):
+        kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
+        print(f'{colorama.Fore.RED}Failure:{colorama.Style.RESET_ALL}', kind, self.username, msg, kwargs_pretty)
+
+    def debug(self, msg, **kwargs):
+        # Ignore these messages for now hehe
+        pass
+
     async def login(self):
         """
         Log in to the JupyterHub.
@@ -73,7 +86,7 @@ class User:
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
         if hub_cookie:
             self.log = self.log.bind(hub=hub_cookie.value)
-        self.log.msg('Login: Complete', action='login', phase='complete', duration=time.monotonic() - start_time)
+        self.success('login', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
         return True
 
@@ -81,30 +94,30 @@ class User:
         assert self.state == User.States.LOGGED_IN
 
         start_time = time.monotonic()
-        self.log.msg(f'Server: Starting', action='server-start', phase='start')
+        self.debug(f'Server: Starting', action='server-start', phase='start')
         i = 0
         while True:
             i += 1
-            self.log.msg(f'Server: Attempting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
+            self.debug(f'Server: Attempting to Starting', action='server-start', phase='attempt-start', attempt=i + 1)
             try:
                 resp = await self.session.get(self.hub_url / 'hub/spawn')
             except Exception as e:
-                self.log.msg('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
+                self.debug('Server: Failed {}'.format(str(e)), action='server-start', attempt=i + 1, phase='attempt-failed', duration=time.monotonic() - start_time)
                 continue
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
             target_url_tree = self.notebook_url / 'tree'
             if resp.url.scheme == target_url_tree.scheme and resp.url.host == target_url_tree.host and resp.url.path == target_url_tree.path:
-                self.log.msg('Server: Started (Jupyter Notebook)', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.success('server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             target_url_lab = self.notebook_url / 'lab'
             if resp.url.scheme == target_url_lab.scheme and resp.url.host == target_url_lab.host and resp.url.path == target_url_lab.path:
-                self.log.msg('Server: Started (JupyterLab)', action='server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.success('server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.log.msg('Server: Timeout', action='server-start', phase='failed', duration=time.monotonic() - start_time)
+                self.failure('server-start', phase='failed', duration=time.monotonic() - start_time, reason='timeout')
                 return False
             # Always log retries, so we can count 'in-progress' actions
-            self.log.msg(f'Server: Retrying after response code {resp.status}', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
+            self.debug(f'Server: Retrying after response code {str(resp)}', action='server-start', phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
             # FIXME: Add jitter?
             await asyncio.sleep(random.uniform(0, spawn_refresh_time))
 
@@ -113,7 +126,7 @@ class User:
 
     async def stop_server(self):
         assert self.state == User.States.SERVER_STARTED
-        self.log.msg('Server: Stopping', action='server-stop', phase='start')
+        self.debug('Server: Stopping', action='server-stop', phase='start')
         start_time = time.monotonic()
         try:
             resp = await self.session.delete(
@@ -121,32 +134,32 @@ class User:
                 headers={'Referer': str(self.hub_url / 'hub/')}
             )
         except Exception as e:
-            self.log.msg('Server: Failed {}'.format(str(e)), action='server-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.failure('server-stop', exception=str(e), duration=time.monotonic() - start_time)
             return False
         if resp.status != 202 and resp.status != 204:
-            self.log.msg('Server: Stop failed', action='server-stop', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
+            self.failure('server-stop', exception=str(resp), duration=time.monotonic() - start_time)
             return False
-        self.log.msg('Server: Stopped', action='server-stop', phase='complete', duration=time.monotonic() - start_time)
+        self.success('server-stop', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
         return True
 
     async def start_kernel(self):
         assert self.state == User.States.SERVER_STARTED
 
-        self.log.msg('Kernel: Starting', action='kernel-start', phase='start')
+        self.debug('Kernel: Starting', action='kernel-start', phase='start')
         start_time = time.monotonic()
 
         try:
             resp = await self.session.post(self.notebook_url / 'api/kernels', headers={'X-XSRFToken': self.xsrf_token})
         except Exception as e:
-            self.log.msg('Kernel: Start failed {}'.format(str(e)), action='kernel-start', phase='failed', duration=time.monotonic() - start_time)
+            self.failure('kernel-start', exception=str(e), duration=time.monotonic() - start_time)
             return False
 
         if resp.status != 201:
-            self.log.msg('Kernel: Start failed', action='kernel-start', phase='failed', extra=str(resp), duration=time.monotonic() - start_time)
+            self.failure('kernel-start', exception=str(resp), duration=time.monotonic() - start_time)
             return False
         self.kernel_id = (await resp.json())['id']
-        self.log.msg('Kernel: Started', action='kernel-start', phase='complete', duration=time.monotonic() - start_time)
+        self.success('kernel-start', duration=time.monotonic() - start_time)
         self.state = User.States.KERNEL_STARTED
         return True
 
@@ -160,19 +173,19 @@ class User:
     async def stop_kernel(self):
         assert self.state == User.States.KERNEL_STARTED
 
-        self.log.msg('Kernel: Stopping', action='kernel-stop', phase='start')
+        self.debug('Kernel: Stopping', action='kernel-stop', phase='start')
         start_time = time.monotonic()
         try:
             resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers={'X-XSRFToken': self.xsrf_token})
         except Exception as e:
-            self.log.msg('Kernel:Failed Stopped {}'.format(str(e)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.failure('kernel-stop', exception=str(e), duration=time.monotonic() - start_time)
             return False
 
         if resp.status != 204:
-            self.log.msg('Kernel:Failed Stopped {}'.format(str(resp)), action='kernel-stop', phase='failed', duration=time.monotonic() - start_time)
+            self.failure('kernel-stop', exception=str(resp), duration=time.monotonic() - start_time)
             return False
 
-        self.log.msg('Kernel: Stopped', action='kernel-stop', phase='complete', duration=time.monotonic() - start_time)
+        self.success('kernel-stop', duration=time.monotonic() - start_time)
         self.state = User.States.SERVER_STARTED
         return True
 
@@ -200,15 +213,15 @@ class User:
 
     async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
-        self.log.msg('WS: Connecting', action='kernel-connect', phase='start')
+        self.debug('WS: Connecting', action='kernel-connect', phase='start')
         is_connected = False
         try:
             async with self.session.ws_connect(channel_url) as ws:
                 is_connected = True
-                self.log.msg('WS: Connected', action='kernel-connect', phase='complete')
+                self.debug('WS: Connected', action='kernel-connect', phase='complete')
                 start_time = time.monotonic()
                 iteration = 0
-                self.log.msg('Code Execute: Started', action='code-execute', phase='start')
+                self.debug('Code Execute: Started', action='code-execute', phase='start')
                 while time.monotonic() - start_time < repeat_time_seconds:
                     exec_start_time = time.monotonic()
                     iteration += 1
@@ -216,11 +229,10 @@ class User:
                     await ws.send_json(self.request_execute_code(msg_id, code))
                     async for msg_text in ws:
                         if msg_text.type != aiohttp.WSMsgType.TEXT:
-                            self.log.msg(
-                                'WS: Unexpected message type',
-                                action='code-execute', phase='failure',
+                            self.failure(
+                                'code-execute',
                                 iteration=iteration,
-                                message_type=msg_text.type, message=str(msg_text),
+                                message=str(msg_text),
                                 duration=time.monotonic() - exec_start_time
                             )
                             return False
@@ -242,15 +254,11 @@ class User:
                     # Sleep a random amount of time between 0 and 1s, so we aren't busylooping
                     await asyncio.sleep(random.uniform(0, 1))
 
-                self.log.msg(
-                    'Code Execute: complete',
-                    action='code-execute', phase='complete',
+                self.success(
+                    'code-execute',
                     duration=duration, iteration=iteration
                 )
                 return True
         except Exception as e:
-            if is_connected:
-                self.log.msg('Code Execute: Failed {}'.format(str(e)), action='code-execute', phase='failure')
-            else:
-                self.log.msg('WS: Failed {}'.format(str(e)), action='kernel-connect', phase='failure')
+            self.failure('code-execute', exception=str(e))
             return False
