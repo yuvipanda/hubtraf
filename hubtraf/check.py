@@ -15,8 +15,7 @@ import secrets
 async def no_auth(*args, **kwargs):
     return True
 
-async def check_user(hub_url, username, api_token_env_var):
-    api_token = os.environ[api_token_env_var]
+async def check_user(hub_url, username, api_token):
     async with User(username, hub_url, no_auth) as u:
         try:
             if not await u.ensure_server_api(api_token):
@@ -46,15 +45,12 @@ def main():
         'username',
         help='Name of user to check'
     )
-    argparser.add_argument(
-        'api_token_env_var',
-        help='Name of env var storing the Hub api token'
-    )
     args = argparser.parse_args()
 
+    api_token = os.environ['JUPYTERHUB_API_TOKEN']
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(check_user(args.hub_url, args.username, args.api_token_env_var))
+    loop.run_until_complete(check_user(args.hub_url, args.username, api_token))
 
 
 if __name__ == '__main__':
