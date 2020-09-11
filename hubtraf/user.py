@@ -261,7 +261,7 @@ class User:
         self.debug('kernel-connect', phase='start')
         is_connected = False
         try:
-            async with self.session.ws_connect(channel_url) as ws:
+            async with self.session.ws_connect(channel_url, headers=self.headers) as ws:
                 is_connected = True
                 self.debug('kernel-connect', phase='complete')
                 start_time = time.monotonic()
