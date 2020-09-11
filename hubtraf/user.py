@@ -93,9 +93,9 @@ class User:
         self.state = User.States.LOGGED_IN
         return True
 
-    async def ensure_server_api(self, timeout=300, spawn_refresh_time=30):
+    async def ensure_server_api(self, api_token, timeout=300, spawn_refresh_time=30):
         api_url = self.hub_url / 'hub/api'
-        self.headers['Authorization'] = 'token 16c7709a19b04f77a11bc6f4b88a9080'
+        self.headers['Authorization'] = f'token {api_token}'
 
         async def server_running():
             async with self.session.get(api_url / 'users' / self.username, headers=self.headers) as resp:
