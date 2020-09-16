@@ -11,4 +11,4 @@ Install the latest version with
 pip install git+https://github.com/yuvipanda/hubtraf.git
 ```
 
-For scripting abilities refer to [hubtraf/\_\_main\_\_.py](hubtraf/__main__.py)
+For scripting abilities refer to [hubtraf/simulate.py](hubtraf/simulate.py) and [hubtraf/check.py](hubtraf/check.py)
