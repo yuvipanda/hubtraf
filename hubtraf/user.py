@@ -1,3 +1,5 @@
+import os
+import sys
 from enum import Enum, auto
 import aiohttp
 import socket
@@ -9,6 +11,8 @@ import async_timeout
 import structlog
 import time
 import colorama
+import logging
+from jupyter_telemetry import EventLog
 
 logger = structlog.get_logger()
 
@@ -26,6 +30,23 @@ class User:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.session.close()
+
+
+    def init_eventlog(self):
+        """Set up the event logging system."""
+        self.eventlog = EventLog(handlers = [
+            logging.FileHandler('event.log'),
+            logging.StreamHandler(sys.stdout)
+        ])
+
+        here = os.path.dirname(__file__)
+        for dirname, _, files in os.walk(os.path.join(here, 'event-schemas')):
+            for file in files:
+                if not file.endswith('.yaml'):
+                    continue
+                self.eventlog.register_schema_file(os.path.join(dirname, file))
+        self.eventlog.allowed_schemas = ["hubtraf.jupyter.org/event"]
+
 
     def __init__(self, username, hub_url, login_handler):
         """
@@ -59,6 +80,8 @@ class User:
             'Referer': str(self.hub_url / 'hub/')
         }
 
+        self.init_eventlog()
+
     def success(self, kind, **kwargs):
         kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
         print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}', kind, self.username,  kwargs_pretty)
@@ -70,6 +93,19 @@ class User:
     def debug(self, kind, **kwargs):
         kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
         print(f'{colorama.Fore.YELLOW}Debug:{colorama.Style.RESET_ALL}', kind, self.username,  kwargs_pretty)
+
+    def _record_event(self, unit, action, status, duration):
+        self.eventlog.record_event(
+            'hubtraf.jupyter.org/event',
+            1,
+            {
+                'action': action,
+                'unit': unit,
+                'status': status,
+                'username': self.username,
+                'duration': duration,
+            },
+        )
 
     async def login(self):
         """
@@ -112,8 +148,10 @@ class User:
             if resp.status == 201:
                 # Server created
                 # FIXME: Verify this server is actually up
-                self.success('server-start', duration=time.monotonic() - start_time)
+                duration=time.monotonic() - start_time
+                self.success('server-start', duration=duration)
                 self.state = User.States.SERVER_STARTED
+                self._record_event('server', 'start', 'success', duration)
                 return True
             elif resp.status == 202:
                 # Server start request received, not necessarily started
@@ -121,8 +159,10 @@ class User:
                 self.debug('server-start', phase='waiting')
                 while not (await server_running()):
                     await asyncio.sleep(0.5)
-                self.success('server-start', duration=time.monotonic() - start_time)
+                duration=time.monotonic() - start_time
+                self.success('server-start', duration=duration)
                 self.state = User.States.SERVER_STARTED
+                self._record_event('server', 'start', 'success', duration)
                 return True
             elif resp.status == 400:
                 body = await resp.json()
@@ -158,7 +198,9 @@ class User:
                 self.success('server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.failure('server-start', phase='failed', duration=time.monotonic() - start_time, reason='timeout')
+                duration=time.monotonic() - start_time
+                self.failure('server-start', phase='failed', duration=duration, reason='timeout')
+                self._record_event('server', 'start', 'failure', duration)
                 return False
             # Always log retries, so we can count 'in-progress' actions
             self.debug('server-start', resp=str(resp), phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
@@ -179,12 +221,18 @@ class User:
                 headers=self.headers
             )
         except Exception as e:
-            self.failure('server-stop', exception=str(e), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('server-stop', exception=str(e), duration=duration)
+            self.record_event('server', 'stop', 'failure', duration)
             return False
         if resp.status != 202 and resp.status != 204:
-            self.failure('server-stop', exception=str(resp), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('server-stop', exception=str(resp), duration=duration)
+            self.record_event('server', 'stop', 'failure', duration)
             return False
-        self.success('server-stop', duration=time.monotonic() - start_time)
+        duration=time.monotonic() - start_time
+        self.success('server-stop', duration = duration)
+        self._record_event('server', 'stop', 'success', duration)
         self.state = User.States.LOGGED_IN
         return True
 
@@ -197,14 +245,20 @@ class User:
         try:
             resp = await self.session.post(self.notebook_url / 'api/kernels', headers=self.headers)
         except Exception as e:
-            self.failure('kernel-start', exception=str(e), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('kernel-start', exception=str(e), duration=duration)
+            self.record_event('kernel', 'start', 'failure', duration)
             return False
 
         if resp.status != 201:
-            self.failure('kernel-start', exception=str(resp), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('kernel-start', exception=str(e), duration=duration)
+            self.record_event('kernel', 'start', 'failure', duration)
             return False
         self.kernel_id = (await resp.json())['id']
-        self.success('kernel-start', duration=time.monotonic() - start_time)
+        duration=time.monotonic() - start_time
+        self.success('kernel-start', duration=duration)
+        self._record_event('kernel', 'start', 'success', duration)
         self.state = User.States.KERNEL_STARTED
         return True
 
@@ -223,14 +277,21 @@ class User:
         try:
             resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers=self.headers)
         except Exception as e:
-            self.failure('kernel-stop', exception=str(e), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('kernel-stop', exception=str(e), duration=duration)
+            self._record_event('kernel', 'stop', 'failure', duration)
             return False
 
         if resp.status != 204:
-            self.failure('kernel-stop', exception=str(resp), duration=time.monotonic() - start_time)
+            duration=time.monotonic() - start_time
+            self.failure('kernel-stop', exception=str(e), duration=duration)
+            self._record_event('kernel', 'stop', 'failure', duration)
+
             return False
 
-        self.success('kernel-stop', duration=time.monotonic() - start_time)
+        duration=time.monotonic() - start_time
+        self.success('kernel-stop', duration=duration)
+        self._record_event('kernel', 'stop', 'success', duration)
         self.state = User.States.SERVER_STARTED
         return True
 
@@ -274,12 +335,14 @@ class User:
                     await ws.send_json(self.request_execute_code(msg_id, code))
                     async for msg_text in ws:
                         if msg_text.type != aiohttp.WSMsgType.TEXT:
+                            duration=time.monotonic() - exec_start_time
                             self.failure(
                                 'code-execute',
                                 iteration=iteration,
                                 message=str(msg_text),
-                                duration=time.monotonic() - exec_start_time
+                                duration=duration
                             )
+                            self._record_event('code', 'execute', 'failure', duration)
                             return False
 
                         msg = msg_text.json()
@@ -310,7 +373,9 @@ class User:
                     'code-execute',
                     duration=duration, iteration=iteration
                 )
+                self._record_event('code', 'execute', 'success', duration)
                 return True
         except Exception as e:
             self.failure('code-execute', exception=str(e))
+            self._record_event('code', 'execute', 'failure', 0)
             return False

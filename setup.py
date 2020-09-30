@@ -8,6 +8,7 @@ setup(
     author='YuviPanda',
     author_email='yuvipanda@gmail.com',
     packages=find_packages(),
+    include_package_data=True,
     install_requires=['aiohttp', 'structlog', 'oauthlib', 'yarl', 'colorama'],
     entry_points={
         'console_scripts': [
