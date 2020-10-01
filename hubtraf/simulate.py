@@ -9,9 +9,11 @@ from functools import partial
 from collections import Counter
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds, json):
     await asyncio.sleep(delay_seconds)
     async with User(username, hub_url, partial(login_dummy, password=password)) as u:
+        if json:
+            u.logger = 'jupyter-telemetry'
         try:
             if not await u.login():
                 return 'login'
@@ -37,7 +39,8 @@ async def run(args):
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime)),
+            args.json
         ))
 
     outputs = await asyncio.gather(*awaits)

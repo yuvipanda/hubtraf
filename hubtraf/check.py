@@ -14,8 +14,10 @@ import secrets
 async def no_auth(*args, **kwargs):
     return True
 
-async def check_user(hub_url, username, api_token):
+async def check_user(hub_url, username, api_token, json):
     async with User(username, hub_url, no_auth) as u:
+        if json:
+            u.logger = "jupyter-telemetry"
         try:
             if not await u.ensure_server_api(api_token):
                 return 'start-server'
@@ -51,13 +53,10 @@ def main():
     )
     args = argparser.parse_args()
 
-    # if args.json:
-    # else:
-
     api_token = os.environ['JUPYTERHUB_API_TOKEN']
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(check_user(args.hub_url, args.username, api_token))
+    loop.run_until_complete(check_user(args.hub_url, args.username, api_token, args.json))
 
 
 if __name__ == '__main__':
