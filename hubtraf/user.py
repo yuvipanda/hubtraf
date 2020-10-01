@@ -8,13 +8,10 @@ import random
 from yarl import URL
 import asyncio
 import async_timeout
-import structlog
 import time
 import colorama
 import logging
 from jupyter_telemetry import EventLog
-
-logger = structlog.get_logger()
 
 
 class User:
@@ -57,7 +54,6 @@ class User:
         login_handler - a awaitable callable that will be passed the following parameters:
                             username
                             session (aiohttp session object)
-                            log (structlog log object)
                             hub_url (yarl URL object)
 
                         It should 'log in' the user with whatever requests it needs to
@@ -72,9 +68,6 @@ class User:
         self.state = User.States.CLEAR
         self.notebook_url = self.hub_url / 'user' / self.username
 
-        self.log = logger.bind(
-            username=username
-        )
         self.login_handler = login_handler
         self.headers = {
             'Referer': str(self.hub_url / 'hub/')
@@ -119,12 +112,10 @@ class User:
         assert self.state == User.States.CLEAR
 
         start_time = time.monotonic()
-        logged_in = await self.login_handler(log=self.log, hub_url=self.hub_url, session=self.session, username=self.username)
+        logged_in = await self.login_handler(hub_url=self.hub_url, session=self.session, username=self.username)
         if not logged_in:
             return False
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
-        if hub_cookie:
-            self.log = self.log.bind(hub=hub_cookie.value)
         self.success('login', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
         return True

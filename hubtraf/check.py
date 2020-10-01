@@ -1,6 +1,5 @@
 import asyncio
 import os
-import structlog
 import argparse
 import random
 import time
@@ -45,7 +44,15 @@ def main():
         'username',
         help='Name of user to check'
     )
+    argparser.add_argument(
+        '--json',
+        action='store_true',
+        help='True if output should be JSON formatted'
+    )
     args = argparser.parse_args()
+
+    # if args.json:
+    # else:
 
     api_token = os.environ['JUPYTERHUB_API_TOKEN']
 

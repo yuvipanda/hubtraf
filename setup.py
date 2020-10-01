@@ -9,7 +9,7 @@ setup(
     author_email='yuvipanda@gmail.com',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=['aiohttp', 'structlog', 'oauthlib', 'yarl', 'colorama'],
+    install_requires=['aiohttp', 'oauthlib', 'yarl', 'colorama'],
     entry_points={
         'console_scripts': [
             'hubtraf-simulate = hubtraf.simulate:main',

@@ -1,5 +1,4 @@
 import asyncio
-import structlog
 import argparse
 import random
 import time
@@ -84,15 +83,6 @@ def main():
         help='True if output should be JSON formatted'
     )
     args = argparser.parse_args()
-
-    processors=[structlog.processors.TimeStamper(fmt="ISO")]
-
-    if args.json:
-        processors.append(structlog.processors.JSONRenderer())
-    else:
-        processors.append(structlog.dev.ConsoleRenderer())
-
-    structlog.configure(processors=processors)
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run(args))
