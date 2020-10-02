@@ -6,41 +6,27 @@ description: |
 type: object
 required:
 - action
-- unit
 - username
 - duration
 properties:
   action:
     enum:
-    - start
-    - stop
-    - execute
+    - server-start
+    - server-stop
+    - kernel-start
+    - kernel-stop
+    - code-execute
+    - login
     description: |
       Action performed by hubtraf.
       This is a required field.
       Possible Values:
-      1. start
-      2. stop
-      3. execute
-  unit:
-    enum:
-    - server
-    - kernel
-    - code
-    description: |
-      The unit the hubtraf action is performed on.
-      This is a required field.
-      Possible Values:
-      1. server
-      The server can have the following actions performed on it:
-      -start
-      -stop
-      2. kernel
-      The kernel can have the following actions performed on it:
-      -start
-      -stop
-      3. code
-      The code can have the following actions performed on it: execute
+      1. server-start
+      2. server-stop
+      3. kernel-start
+      4. kernel-stop
+      5. code-execute
+      6. login
   status:
     enum:
     - success

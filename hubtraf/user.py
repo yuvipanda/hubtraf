@@ -78,13 +78,14 @@ class User:
         self.init_eventlog()
 
 
-    def success(self, **kwargs):
+    def success(self, kind, **kwargs):
         kwargs['username'] = self.username
         if self.logger == "colorama":
             kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
-            print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}',  kwargs_pretty)
+            print(f'{colorama.Fore.GREEN}Success:{colorama.Style.RESET_ALL}', kind, kwargs_pretty)
         else:
             kwargs['status'] = "success"
+            kwargs['action'] = kind
             self.eventlog.record_event(
                 'hubtraf.jupyter.org/event',
                 1,
@@ -92,13 +93,14 @@ class User:
             )
 
 
-    def failure(self, **kwargs):
+    def failure(self, kind, **kwargs):
         kwargs['username'] = self.username
         if self.logger == "colorama":
             kwargs_pretty = " ".join([f"{k}:{v}" for k, v in kwargs.items()])
-            print(f'{colorama.Fore.RED}Failure:{colorama.Style.RESET_ALL}',  kwargs_pretty)
+            print(f'{colorama.Fore.RED}Failure:{colorama.Style.RESET_ALL}', kind, kwargs_pretty)
         else:
             kwargs['status'] = "failure"
+            kwargs['action'] = kind
             self.eventlog.record_event(
                 'hubtraf.jupyter.org/event',
                 1,
@@ -126,7 +128,7 @@ class User:
         if not logged_in:
             return False
         hub_cookie = self.session.cookie_jar.filter_cookies(self.hub_url).get('hub', None)
-        self.success(action='login', duration=time.monotonic() - start_time)
+        self.success('login', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
         return True
 
@@ -150,7 +152,7 @@ class User:
                 # Server created
                 # FIXME: Verify this server is actually up
                 self.state = User.States.SERVER_STARTED
-                self.success(unit='server', action='start', duration=time.monotonic() - start_time)
+                self.success('server-start', duration=time.monotonic() - start_time)
                 return True
             elif resp.status == 202:
                 # Server start request received, not necessarily started
@@ -158,7 +160,7 @@ class User:
                 self.debug('server-start', phase='waiting')
                 while not (await server_running()):
                     await asyncio.sleep(0.5)
-                self.success(unit='server', action='start', duration=time.monotonic() - start_time)
+                self.success('server-start', duration=time.monotonic() - start_time)
                 self.state = User.States.SERVER_STARTED
                 return True
             elif resp.status == 400:
@@ -188,14 +190,14 @@ class User:
             # Check if paths match, ignoring query string (primarily, redirects=N), fragments
             target_url_tree = self.notebook_url / 'tree'
             if resp.url.scheme == target_url_tree.scheme and resp.url.host == target_url_tree.host and resp.url.path == target_url_tree.path:
-                self.success(unit='server', action='start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.success('server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             target_url_lab = self.notebook_url / 'lab'
             if resp.url.scheme == target_url_lab.scheme and resp.url.host == target_url_lab.host and resp.url.path == target_url_lab.path:
-                self.success(unit='server', action='start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
+                self.success('server-start', phase='complete', attempt=i + 1, duration=time.monotonic() - start_time)
                 break
             if time.monotonic() - start_time >= timeout:
-                self.failure(unit='server', action='start', duration=time.monotonic() - start_time, phase='failed', reason='timeout')
+                self.failure('server-start', duration=time.monotonic() - start_time, phase='failed', reason='timeout')
                 return False
             # Always log retries, so we can count 'in-progress' actions
             self.debug('server-start', resp=str(resp), phase='attempt-complete', duration=time.monotonic() - start_time, attempt=i + 1)
@@ -216,12 +218,12 @@ class User:
                 headers=self.headers
             )
         except Exception as e:
-            self.failure(unit='server', action='stop', duration=time.monotonic() - start_time, exception=str(e))
+            self.failure('server-stop', duration=time.monotonic() - start_time, exception=str(e))
             return False
         if resp.status != 202 and resp.status != 204:
-            self.failure(unit='server', action='stop', duration=time.monotonic() - start_time, exception=str(resp))
+            self.failure('server-stop', duration=time.monotonic() - start_time, exception=str(resp))
             return False
-        self.success(unit='server', action='stop', duration=time.monotonic() - start_time)
+        self.success('server-stop', duration=time.monotonic() - start_time)
         self.state = User.States.LOGGED_IN
         return True
 
@@ -234,14 +236,14 @@ class User:
         try:
             resp = await self.session.post(self.notebook_url / 'api/kernels', headers=self.headers)
         except Exception as e:
-            self.failure(unit='kernel', action='start', duration=time.monotonic() - start_time, exception=str(e))
+            self.failure('kernel-start', duration=time.monotonic() - start_time, exception=str(e))
             return False
 
         if resp.status != 201:
-            self.failure(unit='kernel', action='start', duration=time.monotonic() - start_time, exception=str(e))
+            self.failure('kernel-start', duration=time.monotonic() - start_time, exception=str(e))
             return False
         self.kernel_id = (await resp.json())['id']
-        self.success(unit='kernel', action='start', duration=time.monotonic() - start_time)
+        self.success('kernel-start', duration=time.monotonic() - start_time)
         self.state = User.States.KERNEL_STARTED
         return True
 
@@ -260,15 +262,15 @@ class User:
         try:
             resp = await self.session.delete(self.notebook_url / 'api/kernels' / self.kernel_id, headers=self.headers)
         except Exception as e:
-            self.failure(unit='kernel', action='stop', duration=time.monotonic() - start_time, exception=str(e))
+            self.failure('kernel-stop', duration=time.monotonic() - start_time, exception=str(e))
             return False
 
         if resp.status != 204:
-            self.failure(unit='kernel', action='stop', duration=time.monotonic() - start_time, exception=str(e))
+            self.failure('kernel-stop', duration=time.monotonic() - start_time, exception=str(e))
 
             return False
 
-        self.success(unit='kernel', action='stop', duration=time.monotonic() - start_time)
+        self.success('kernel-stop', duration=time.monotonic() - start_time)
         self.state = User.States.SERVER_STARTED
         return True
 
@@ -313,7 +315,7 @@ class User:
                     async for msg_text in ws:
                         if msg_text.type != aiohttp.WSMsgType.TEXT:
                             duration=time.monotonic() - exec_start_time
-                            self.failure(unit='code', action='execute', duration=duration, iteration=iteration, message=str(msg_text))
+                            self.failure('code-execute', duration=duration, iteration=iteration, message=str(msg_text))
                             return False
 
                         msg = msg_text.json()
@@ -340,8 +342,8 @@ class User:
                     else:
                         break
 
-                self.success(unit='code', action='execute', duration=duration)
+                self.success('code-execute', duration=duration)
                 return True
         except Exception as e:
-            self.failure(unit='code', action='execute', duration=0)
+            self.failure('code-execute', duration=0)
             return False
