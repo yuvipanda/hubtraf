@@ -306,7 +306,7 @@ class User:
                 self.debug('kernel-connect', phase='complete')
                 start_time = time.monotonic()
                 iteration = 0
-                self.debug('code-execute', phase='start')
+                self.debug('code-execute', phase='start', iteration=iteration)
                 while True:
                     exec_start_time = time.monotonic()
                     iteration += 1
@@ -345,5 +345,5 @@ class User:
                 self.success('code-execute', duration=duration)
                 return True
         except Exception as e:
-            self.failure('code-execute', duration=0)
+            self.failure('code-execute', exception=str(e), duration=0)
             return False
