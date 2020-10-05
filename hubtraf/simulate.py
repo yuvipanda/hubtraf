@@ -3,17 +3,16 @@ import argparse
 import random
 import time
 import socket
-from hubtraf.user import User
 from hubtraf.auth.dummy import login_dummy
+from hubtraf.user import User
+from hubtraf.logger_helpers import get_logger
 from functools import partial
 from collections import Counter
-
 
 async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds, json):
     await asyncio.sleep(delay_seconds)
     async with User(username, hub_url, partial(login_dummy, password=password)) as u:
-        if json:
-            u.logger = 'jupyter-telemetry'
+        u.logger = get_logger(json)
         try:
             if not await u.login():
                 return 'login'

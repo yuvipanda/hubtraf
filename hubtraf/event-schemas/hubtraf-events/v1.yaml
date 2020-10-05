@@ -7,7 +7,6 @@ type: object
 required:
 - action
 - username
-- duration
 properties:
   action:
     enum:
@@ -29,8 +28,9 @@ properties:
       6. login
   status:
     enum:
-    - success
-    - failure
+    - Success
+    - Failure
+    - Debug
     description: |
       Whether or not the action has succeded.
   username:

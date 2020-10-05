@@ -1,1 +1,1 @@
-include hubtraf/event-schemas/kubtraf-events/v1.yaml
+include hubtraf/event-schemas/hubtraf-events/v1.yaml

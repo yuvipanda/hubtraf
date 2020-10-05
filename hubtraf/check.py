@@ -4,8 +4,9 @@ import argparse
 import random
 import time
 import socket
-from hubtraf.user import User
 from hubtraf.auth.dummy import login_dummy
+from hubtraf.logger_helpers import get_logger
+from hubtraf.user import User
 from functools import partial
 from collections import Counter
 import secrets
@@ -16,8 +17,7 @@ async def no_auth(*args, **kwargs):
 
 async def check_user(hub_url, username, api_token, json):
     async with User(username, hub_url, no_auth) as u:
-        if json:
-            u.logger = "jupyter-telemetry"
+        u.logger = get_logger(json)
         try:
             if not await u.ensure_server_api(api_token):
                 return 'start-server'
