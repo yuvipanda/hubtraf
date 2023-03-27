@@ -49,7 +49,7 @@ class User:
         self.hub_url = URL(hub_url)
 
         self.state = User.States.CLEAR
-        self.notebook_url = self.hub_url / 'user' / self.username
+        self.notebook_url = self.hub_url / 'user' / self.username / ''
 
         self.log = logger.bind(
             username=username
