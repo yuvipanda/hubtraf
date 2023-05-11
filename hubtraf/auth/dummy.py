@@ -32,13 +32,19 @@ async def login_dummy(session, hub_url, log, username, password):
         )
         return False
 
+    hub_cookies = session.cookie_jar.filter_cookies(url)
+    if "_xsrf" in hub_cookies:
+        _xsrf = hub_cookies["_xsrf"].value
+    else:
+        _xsrf = ""
+
     try:
         resp = await session.post(
             url,
             data={
                 "username": username,
                 "password": password,
-                "_xsrf": session.cookies.get("_xsrf", ""),
+                "_xsrf": _xsrf,
             },
             allow_redirects=False,
         )
