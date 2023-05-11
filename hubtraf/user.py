@@ -49,7 +49,7 @@ class User:
         self.hub_url = URL(hub_url)
 
         self.state = User.States.CLEAR
-        self.notebook_url = self.hub_url / 'user' / self.username / ''
+        self.notebook_url = self.hub_url / "user" / self.username
 
         self.log = logger.bind(
             username=username
@@ -210,7 +210,10 @@ class User:
 
     @property
     def xsrf_token(self):
-        notebook_cookies = self.session.cookie_jar.filter_cookies(self.notebook_url)
+        # cookie filter needs trailing slash for path prefix
+        notebook_cookies = self.session.cookie_jar.filter_cookies(
+            str(self.notebook_url) + "/"
+        )
         assert '_xsrf' in notebook_cookies
         xsrf_token = notebook_cookies['_xsrf'].value
         return xsrf_token
