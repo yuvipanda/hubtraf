@@ -12,10 +12,14 @@ pytest_plugins = "jupyterhub-spawners-plugin"
 
 @pytest.fixture
 async def app(hub_app):
-    print(hub_app)
     config = Config()
+    # yarl or asyncio doesn't handle escaped URLs correctly
+    config.JupyterHub.base_url = "/prefix/"
     config.JupyterHub.authenticator_class = "dummy"
     config.JupyterHub.spawner_class = "simple"
+    # mock hub uses a non-real server,
+    # but we want to test with a real one
+    config.Spawner.cmd = "jupyterhub-singleuser"
     app = await hub_app(config=config)
     return app
 
@@ -38,6 +42,5 @@ def username():
 
 @pytest.fixture
 async def user(username, app, hub_url):
-    print("app", app)
     async with User(username, hub_url, partial(login_dummy, password="")) as u:
         yield u
