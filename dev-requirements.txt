@@ -1,5 +1,6 @@
 ipykernel
 jupyter-server
+jupyterlab
 jupyterhub
 pytest
 pytest-asyncio

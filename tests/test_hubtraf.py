@@ -10,8 +10,8 @@ async def test_login(user, hub_url):
 async def test_full(user):
     success = await user.login()
     assert success
-    await user.ensure_server_simulate(timeout=120, spawn_refresh_time=5)
-    await user.start_kernel()
+    assert await user.ensure_server_simulate(timeout=120, spawn_refresh_time=5)
+    assert await user.start_kernel()
     await user.assert_code_output("5 * 4", "20", 5, 5)
 
 
