@@ -9,6 +9,7 @@ async def test_login(user, hub_url):
 
 async def test_full(user):
     success = await user.login()
+    assert success
     await user.ensure_server_simulate()
     await user.start_kernel()
     await user.assert_code_output("5 * 4", "20", 5, 5)
