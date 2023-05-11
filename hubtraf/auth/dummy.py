@@ -11,8 +11,37 @@ async def login_dummy(session, hub_url, log, username, password):
 
     url = hub_url / 'hub/login'
 
+    # get login page, should set xsrf cookie in the session
     try:
-        resp = await session.post(url, data={'username': username, 'password': password}, allow_redirects=False)
+        resp = await session.get(url)
+    except Exception as e:
+        log.msg(
+            "Login: Failed to get login page with exception {}".format(repr(e)),
+            action="login",
+            phase="failed",
+            duration=time.monotonic() - start_time,
+        )
+        return False
+
+    if resp.status != 200:
+        log.msg(
+            "Login: Failed to get login page with response {}".format(str(resp)),
+            action="login",
+            phase="failed",
+            duration=time.monotonic() - start_time,
+        )
+        return False
+
+    try:
+        resp = await session.post(
+            url,
+            data={
+                "username": username,
+                "password": password,
+                "_xsrf": session.cookies.get("_xsrf", ""),
+            },
+            allow_redirects=False,
+        )
     except Exception as e:
         log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
         return False
