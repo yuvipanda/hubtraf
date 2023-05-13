@@ -1,18 +1,18 @@
 import asyncio
-import structlog
 import argparse
 import random
 import time
 import socket
-from hubtraf.user import User
 from hubtraf.auth.dummy import login_dummy
+from hubtraf.user import User
+from hubtraf.logger_helpers import get_logger
 from functools import partial
 from collections import Counter
 
-
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds, json):
     await asyncio.sleep(delay_seconds)
     async with User(username, hub_url, partial(login_dummy, password=password)) as u:
+        u.logger = get_logger(json)
         try:
             if not await u.login():
                 return 'login'
@@ -38,7 +38,8 @@ async def run(args):
             f'{args.user_prefix}-' + str(i),
             'hello',
             int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
+            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime)),
+            args.json
         ))
 
     outputs = await asyncio.gather(*awaits)
@@ -84,15 +85,6 @@ def main():
         help='True if output should be JSON formatted'
     )
     args = argparser.parse_args()
-
-    processors=[structlog.processors.TimeStamper(fmt="ISO")]
-
-    if args.json:
-        processors.append(structlog.processors.JSONRenderer())
-    else:
-        processors.append(structlog.dev.ConsoleRenderer())
-
-    structlog.configure(processors=processors)
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run(args))
