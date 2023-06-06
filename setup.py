@@ -8,11 +8,29 @@ setup(
     author='YuviPanda',
     author_email='yuvipanda@gmail.com',
     packages=find_packages(),
-    install_requires=['aiohttp', 'structlog', 'oauthlib', 'yarl', 'colorama'],
     entry_points={
         'console_scripts': [
             'hubtraf-simulate = hubtraf.simulate:main',
             'hubtraf-check = hubtraf.check:main'
+        ],
+    },
+    install_requires=[
+        "aiohttp",
+        "structlog",
+        "oauthlib",
+        "yarl",
+        "colorama",
+    ],
+    extras_require={
+        "test": [
+            "ipykernel",
+            "jupyter-server",
+            "jupyterlab",
+            "jupyterhub",
+            "pytest",
+            "pytest-asyncio",
+            "pytest-cov",
+            "pytest-jupyterhub",
         ],
     },
 )
