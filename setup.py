@@ -14,5 +14,5 @@ setup(
             'hubtraf-simulate = hubtraf.simulate:main',
             'hubtraf-check = hubtraf.check:main'
         ],
-    }
+    },
 )
