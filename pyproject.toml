@@ -1,0 +1,8 @@
+# pytest is used for running Python based tests
+#
+# ref: https://docs.pytest.org/en/stable/
+#
+[tool.pytest.ini_options]
+addopts = "--verbose --color=yes --durations=10 --cov=hubtraf"
+asyncio_mode = "auto"
+testpaths = ["tests"]
