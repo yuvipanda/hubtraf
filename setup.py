@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='hubtraf',
-    version='0.1',
+    version='1.0.0.dev',
     url='https://github.com/yuvipanda/hubtraf',
     license='3-clause BSD',
     author='YuviPanda',
