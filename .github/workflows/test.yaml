@@ -1,15 +1,28 @@
 # This is a GitHub workflow defining a set of jobs with a set of steps.
-# ref: https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions
+# ref: https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions
 #
 name: Tests
 
 on:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/workflows/*.yaml"
+      - "!.github/workflows/test.yaml"
   push:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/workflows/*.yaml"
+      - "!.github/workflows/test.yaml"
+    branches-ignore:
+      - "dependabot/**"
+      - "pre-commit-ci-update-config"
+    tags: ["**"]
   workflow_dispatch:
 
 jobs:
-  # Run tests
   test:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -18,49 +31,47 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python: "3.9"
-            jupyterhub: "2"
-          - python: "3.10"
-            jupyterhub: "3"
-          - python: "3.11"
-            jupyterhub: "4"
+          - python-version: "3.8"
+            pip-install-spec: "jupyterhub==2.* sqlalchemy==1.*"
+          - python-version: "3.9"
+            pip-install-spec: "jupyterhub==3.*"
+          - python-version: "3.11"
+            pip-install-spec: "jupyterhub==4.*"
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Install Python ${{ matrix.python }}
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "${{ matrix.python-version }}"
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install Node dependencies
+        run: |
+          npm install -g configurable-http-proxy
 
       # preserve pip cache to speed up installation
       - name: Cache pip
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          # Look to see if there is a cache hit for the corresponding requirements file
-          key: ${{ runner.os }}-pip-${{ hashFiles('*requirements.txt') }}
+          # Look to see if there is a cache hit for the corresponding requirements
+          key: ${{ runner.os }}-pip-${{ hashFiles('setup.py') }}
 
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade --pre -r dev-requirements.txt
-          if [[ ! -z "${{ matrix.jupyterhub }}" ]]; then
-            pip install jupyterhub==${{ matrix.jupyterhub }}.*
-          fi
-          pip install -e .
+          pip install ${{ matrix.pip-install-spec }}
+          pip install -e ".[test]"
 
-          pip freeze
-
-      - name: Install Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: "14"
-
-      - name: Install Node dependencies
+      - name: List Python dependencies
         run: |
-          npm install -g configurable-http-proxy
+          pip freeze
 
       - name: Run tests
         run: |
-          py.test -v tests
+          pytest
+
+      # GitHub action reference: https://github.com/codecov/codecov-action
+      - uses: codecov/codecov-action@v3
