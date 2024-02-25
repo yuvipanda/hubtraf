@@ -21,6 +21,7 @@ async def lti_login_data(
 
     log is used to emit timing and status information.
     """
+    start_time = time.monotonic()
     args = {
         'oauth_consumer_key': consumer_key,
         'oauth_timestamp': str(time.time()),
