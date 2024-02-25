@@ -30,6 +30,7 @@ def hub_url(app):
     port = URL(app.bind_url).port
     return URL(f"http://localhost:{port}{app.base_url}")
 
+
 user_counter = 0
 
 

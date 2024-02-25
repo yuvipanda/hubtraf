@@ -49,9 +49,19 @@ async def login_dummy(session, hub_url, log, username, password):
             allow_redirects=False,
         )
     except Exception as e:
-        log.msg(f'Login: Failed with exception {repr(e)}', action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(
+            f'Login: Failed with exception {repr(e)}',
+            action='login',
+            phase='failed',
+            duration=time.monotonic() - start_time,
+        )
         return False
     if resp.status != 302:
-        log.msg(f'Login: Failed with response {str(resp)}', action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(
+            f'Login: Failed with response {str(resp)}',
+            action='login',
+            phase='failed',
+            duration=time.monotonic() - start_time,
+        )
         return False
     return True

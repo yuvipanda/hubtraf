@@ -1,6 +1,7 @@
 """
 Utilities to parse the output from hubtraf
 """
+
 import argparse
 import json
 
@@ -10,9 +11,9 @@ from dateutil import parser
 def extract_event(line):
     r"""
     Extract a line of JSON data from a line of fluentd output / raw output
-    
+
     fluentd has strange outputs. It's double JSON encoded, and has a timestamp in it.
-    
+
     >>> line = r'tail.0: [1520570980.336377, {"log":"{\"username\": \"user1\", \"timestamp\": \"2018-03-09T04:49:40.336049Z\"}"}]'
     >>> data = extract_event(line)
     >>> data['username']
@@ -27,8 +28,9 @@ def extract_event(line):
         return json.loads(line)
     processed_line = line.split(',', 1)[1].strip()[:-1]
 
-    processed_data = json.loads(json.loads(processed_line)['log'])        
+    processed_data = json.loads(json.loads(processed_line)['log'])
     return processed_data
+
 
 def prepare_data(inputpath, outputpath):
     """
@@ -47,7 +49,7 @@ def prepare_data(inputpath, outputpath):
             except Exception:
                 print(l)
                 continue
-    
+
     events.sort(key=lambda e: parser.parse(e['timestamp']))
 
     with open(outputpath, 'w') as outputfile:

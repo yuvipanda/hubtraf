@@ -11,7 +11,7 @@ setup(
     entry_points={
         'console_scripts': [
             'hubtraf-simulate = hubtraf.simulate:main',
-            'hubtraf-check = hubtraf.check:main'
+            'hubtraf-check = hubtraf.check:main',
         ],
     },
     install_requires=[

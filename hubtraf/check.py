@@ -9,6 +9,7 @@ from hubtraf.user import User
 async def no_auth(*args, **kwargs):
     return True
 
+
 async def check_user(hub_url, username, api_token):
     async with User(username, hub_url, no_auth) as u:
         try:
@@ -17,7 +18,9 @@ async def check_user(hub_url, username, api_token):
             if not await u.start_kernel():
                 return 'start-kernel'
             nonce = secrets.token_hex(64)
-            if not await u.assert_code_output(f"!echo -n {nonce} > nonce \n!cat nonce", nonce, 2):
+            if not await u.assert_code_output(
+                f"!echo -n {nonce} > nonce \n!cat nonce", nonce, 2
+            ):
                 return 'run-code'
         finally:
             if u.state == User.States.KERNEL_STARTED:
@@ -32,13 +35,9 @@ async def check_user(hub_url, username, api_token):
 def main():
     argparser = argparse.ArgumentParser()
     argparser.add_argument(
-        'hub_url',
-        help='Hub URL to send traffic to (without a trailing /)'
+        'hub_url', help='Hub URL to send traffic to (without a trailing /)'
     )
-    argparser.add_argument(
-        'username',
-        help='Name of user to check'
-    )
+    argparser.add_argument('username', help='Name of user to check')
     args = argparser.parse_args()
 
     api_token = os.environ['JUPYTERHUB_API_TOKEN']

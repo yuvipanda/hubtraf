@@ -7,6 +7,7 @@ See [LICENCE](LICENCE).
 ## Geting started with the Python module
 
 Install the latest version with
+
 ```shell
 pip install git+https://github.com/yuvipanda/hubtraf.git
 ```
