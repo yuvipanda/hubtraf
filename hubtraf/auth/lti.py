@@ -34,9 +34,9 @@ async def lti_login_data(session, log, hub_url, username, consumer_key, consumer
     try:
         resp = await session.post(url, data=args, allow_redirects=False)
     except Exception as e:
-        log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(f'Login: Failed with exception {repr(e)}', action='login', phase='failed', duration=time.monotonic() - start_time)
         raise OperationError()
     if resp.status != 302:
-        log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(f'Login: Failed with response {str(resp)}', action='login', phase='failed', duration=time.monotonic() - start_time)
         raise OperationError()
     return args
