@@ -1,11 +1,9 @@
-from enum import Enum, auto
+from enum import Enum
 import aiohttp
-import socket
 import uuid
 import random
 from yarl import URL
 import asyncio
-import async_timeout
 import structlog
 import time
 import colorama
@@ -262,10 +260,8 @@ class User:
     async def assert_code_output(self, code, output, execute_timeout, repeat_time_seconds=None):
         channel_url = self.notebook_url / 'api/kernels' / self.kernel_id / 'channels'
         self.debug('kernel-connect', phase='start')
-        is_connected = False
         try:
             async with self.session.ws_connect(channel_url, headers=self.headers) as ws:
-                is_connected = True
                 self.debug('kernel-connect', phase='complete')
                 start_time = time.monotonic()
                 iteration = 0

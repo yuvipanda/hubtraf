@@ -2,7 +2,6 @@ import asyncio
 import structlog
 import argparse
 import random
-import time
 import socket
 from hubtraf.user import User
 from hubtraf.auth.dummy import login_dummy

@@ -42,7 +42,7 @@ def prepare_data(inputpath, outputpath):
         for l in inputfile:
             try:
                 events.append(extract_event(l))
-            except Exception as e:
+            except Exception:
                 print(l)
                 continue
     
