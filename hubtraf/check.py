@@ -1,8 +1,9 @@
+import argparse
 import asyncio
 import os
-import argparse
-from hubtraf.user import User
 import secrets
+
+from hubtraf.user import User
 
 
 async def no_auth(*args, **kwargs):

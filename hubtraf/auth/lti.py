@@ -1,6 +1,8 @@
-from oauthlib.oauth1.rfc5849 import signature
 import time
 import uuid
+
+from oauthlib.oauth1.rfc5849 import signature
+
 from hubtraf.user import OperationError
 
 

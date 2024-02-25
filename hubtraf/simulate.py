@@ -1,12 +1,14 @@
-import asyncio
-import structlog
 import argparse
+import asyncio
 import random
 import socket
-from hubtraf.user import User
-from hubtraf.auth.dummy import login_dummy
-from functools import partial
 from collections import Counter
+from functools import partial
+
+import structlog
+
+from hubtraf.auth.dummy import login_dummy
+from hubtraf.user import User
 
 
 async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):

@@ -1,12 +1,13 @@
-from enum import Enum
-import aiohttp
-import uuid
-import random
-from yarl import URL
 import asyncio
-import structlog
+import random
 import time
+import uuid
+from enum import Enum
+
+import aiohttp
 import colorama
+import structlog
+from yarl import URL
 
 logger = structlog.get_logger()
 

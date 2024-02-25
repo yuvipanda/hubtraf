@@ -1,9 +1,11 @@
 """
 Utilities to parse the output from hubtraf
 """
-import json
-from dateutil import parser
 import argparse
+import json
+
+from dateutil import parser
+
 
 def extract_event(line):
     r"""

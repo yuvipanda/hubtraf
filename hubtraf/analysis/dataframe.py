@@ -1,10 +1,12 @@
 """
 Dataframe related analysis helpers
 """
-import streamz
-import json
 import io
+import json
+
 import pandas as pd
+import streamz
+
 
 def accumulate_to_df(logfile, accumulate_func):
     """
