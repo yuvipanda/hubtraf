@@ -100,4 +100,3 @@ Python Usage
   ``--user-ession-max-start-delay``  Max seconds by which all users are have logged in, default 60
   ``--json``                         True if output should be JSON formatted
   =================================  =======================================================
-

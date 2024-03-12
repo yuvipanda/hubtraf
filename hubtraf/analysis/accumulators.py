@@ -2,6 +2,7 @@
 Streamz Accumulators for use with processed hubtraf data
 """
 
+
 def count_in_progress(state, event):
     """
     Count in-progress actions.

@@ -16,7 +16,7 @@ async def login_dummy(session, hub_url, log, username, password):
         resp = await session.get(url)
     except Exception as e:
         log.msg(
-            "Login: Failed to get login page with exception {}".format(repr(e)),
+            f"Login: Failed to get login page with exception {repr(e)}",
             action="login",
             phase="failed",
             duration=time.monotonic() - start_time,
@@ -25,7 +25,7 @@ async def login_dummy(session, hub_url, log, username, password):
 
     if resp.status != 200:
         log.msg(
-            "Login: Failed to get login page with response {}".format(str(resp)),
+            f"Login: Failed to get login page with response {str(resp)}",
             action="login",
             phase="failed",
             duration=time.monotonic() - start_time,
@@ -49,9 +49,19 @@ async def login_dummy(session, hub_url, log, username, password):
             allow_redirects=False,
         )
     except Exception as e:
-        log.msg('Login: Failed with exception {}'.format(repr(e)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(
+            f'Login: Failed with exception {repr(e)}',
+            action='login',
+            phase='failed',
+            duration=time.monotonic() - start_time,
+        )
         return False
     if resp.status != 302:
-        log.msg('Login: Failed with response {}'.format(str(resp)), action='login', phase='failed', duration=time.monotonic() - start_time)
+        log.msg(
+            f'Login: Failed with response {str(resp)}',
+            action='login',
+            phase='failed',
+            duration=time.monotonic() - start_time,
+        )
         return False
     return True

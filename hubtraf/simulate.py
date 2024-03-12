@@ -1,16 +1,19 @@
-import asyncio
-import structlog
 import argparse
+import asyncio
 import random
-import time
 import socket
-from hubtraf.user import User
-from hubtraf.auth.dummy import login_dummy
-from functools import partial
 from collections import Counter
+from functools import partial
+
+import structlog
+
+from hubtraf.auth.dummy import login_dummy
+from hubtraf.user import User
 
 
-async def simulate_user(hub_url, username, password, delay_seconds, code_execute_seconds):
+async def simulate_user(
+    hub_url, username, password, delay_seconds, code_execute_seconds
+):
     await asyncio.sleep(delay_seconds)
     async with User(username, hub_url, partial(login_dummy, password=password)) as u:
         try:
@@ -33,59 +36,59 @@ async def run(args):
     # FIXME: Pass in individual arguments, not argparse object
     awaits = []
     for i in range(args.user_count):
-        awaits.append(simulate_user(
-            args.hub_url,
-            f'{args.user_prefix}-' + str(i),
-            'hello',
-            int(random.uniform(0, args.user_session_max_start_delay)),
-            int(random.uniform(args.user_session_min_runtime, args.user_session_max_runtime))
-        ))
+        awaits.append(
+            simulate_user(
+                args.hub_url,
+                f'{args.user_prefix}-' + str(i),
+                'hello',
+                int(random.uniform(0, args.user_session_max_start_delay)),
+                int(
+                    random.uniform(
+                        args.user_session_min_runtime, args.user_session_max_runtime
+                    )
+                ),
+            )
+        )
 
     outputs = await asyncio.gather(*awaits)
     print(Counter(outputs))
 
+
 def main():
     argparser = argparse.ArgumentParser()
     argparser.add_argument(
-        'hub_url',
-        help='Hub URL to send traffic to (without a trailing /)'
+        'hub_url', help='Hub URL to send traffic to (without a trailing /)'
     )
-    argparser.add_argument(
-        'user_count',
-        type=int,
-        help='Number of users to simulate'
-    )
+    argparser.add_argument('user_count', type=int, help='Number of users to simulate')
     argparser.add_argument(
         '--user-prefix',
         default=socket.gethostname(),
-        help='Prefix to use when generating user names'
+        help='Prefix to use when generating user names',
     )
     argparser.add_argument(
         '--user-session-min-runtime',
         default=60,
         type=int,
-        help='Min seconds user is active for'
+        help='Min seconds user is active for',
     )
     argparser.add_argument(
         '--user-session-max-runtime',
         default=300,
         type=int,
-        help='Max seconds user is active for'
+        help='Max seconds user is active for',
     )
     argparser.add_argument(
         '--user-session-max-start-delay',
         default=60,
         type=int,
-        help='Max seconds by which all users should have logged in'
+        help='Max seconds by which all users should have logged in',
     )
     argparser.add_argument(
-        '--json',
-        action='store_true',
-        help='True if output should be JSON formatted'
+        '--json', action='store_true', help='True if output should be JSON formatted'
     )
     args = argparser.parse_args()
 
-    processors=[structlog.processors.TimeStamper(fmt="ISO")]
+    processors = [structlog.processors.TimeStamper(fmt="ISO")]
 
     if args.json:
         processors.append(structlog.processors.JSONRenderer())
