@@ -24,21 +24,23 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - python-version: "3.8"
-            pip-install-spec: "jupyterhub==2.* sqlalchemy==1.*"
           - python-version: "3.9"
             pip-install-spec: "jupyterhub==3.*"
           - python-version: "3.11"
             pip-install-spec: "jupyterhub==4.*"
           - python-version: "3.12"
             pip-install-spec: "jupyterhub==4.*"
+          - python-version: "3.13"
+            pip-install-spec: "jupyterhub==5.*"
+          - python-version: "3.x"
+            pip-install-spec: "--pre jupyterhub"
 
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +49,7 @@ jobs:
           python-version: "${{ matrix.python-version }}"
       - uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "lts/*"
 
       - name: Install Node dependencies
         run: |
