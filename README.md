@@ -2,9 +2,9 @@
 
 ## License
 
-See [LICENCE](LICENCE).
+See [LICENSE](LICENSE).
 
-## Geting started with the Python module
+## Getting started with the Python module
 
 Install the latest version with
 
